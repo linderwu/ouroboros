@@ -1,9 +1,9 @@
 ---
 name: ouroboros
-description: "Transform a project repo into Trivium-aligned 4-layer structure: raw/ (What=Code), graphify/ (How bridge), wiki/ (Why), spec/ (How 施工藍圖)"
+description: "Ouroboros — Transform a project repo into Trivium-aligned 4-layer structure: raw/ (What=Code), graphify/ (How bridge), wiki/ (Why), spec/ (How 施工藍圖). The codebase consumes itself to be reborn as a knowledge graph."
 ---
 
-# Repo Structurer (Trivium v2.3)
+# Ouroboros (Trivium v2.3)
 
 Transform any project repo into a Trivium-aligned structure where each layer answers one specific question:
 
