@@ -1,27 +1,33 @@
 ---
+title: [Pattern Name]
 type: pattern
-title: "[Issue or Topic]"
-date: YYYY-MM-DD
-tags: [debug, performance, known-issue, workaround]
+tags: [runtime-issue, performance, ...]
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
 ---
 
-# [Issue or Topic]
+# [Pattern Name]
 
-## Background
-What situation led to discovering this pattern?
+## Summary
+The runtime observation in one sentence.
 
-## Problem
-The symptom or error that occurred.
+## Symptom
+What you see when this pattern triggers (log lines, error messages, behavior).
 
 ## Root Cause
-(If known) Why did this happen.
+Why this happens (cite code or config).
 
-## Solution
-How it was fixed or worked around.
+## Workaround
+How to mitigate or work around this issue.
 
-## Prevention
-How to avoid hitting this again in the future.
+## Detection
+How to identify this pattern in logs or metrics.
 
 ## Related
-- [[../decisions/decision-name]] — Related design decision
-- [[../concepts/module-name]] — Affected module
+- [[concept-decision-name]] — design decision that influenced this
+- [[entity-name]] — entity affected
+- [[wiki/raw/incident-record]] — incident that first surfaced this
+
+## References
+- Internal logs: ...
+- External: <https://example.com>

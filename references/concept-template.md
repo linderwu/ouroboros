@@ -1,31 +1,35 @@
 ---
+title: [Decision Name]
 type: concept
-title: "[Module Name]"
-description: One-line description of what this module does
-tags: [module, core, api]
+tags: [architecture, database, ...]
+status: active | superseded | deprecated
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
 ---
 
-# [Module Name]
+# [Decision Name]
 
 ## Summary
-One-paragraph description of what this module does. Write for a new developer joining the project.
+The decision in one sentence.
 
-## What It Does
-- Key functionality 1
-- Key functionality 2
-- Key functionality 3
+## Context
+What problem needed solving? What forces were at play?
 
-## Key Functions / Classes
+## Decision
+What was chosen?
 
-| Name | Responsibility |
-|------|---------------|
-| `func_a` | Brief description |
-| `ClassB` | Brief description |
+## Alternatives Considered
+- Option A — pros/cons
+- Option B — pros/cons
 
-## Dependencies
-- [[../concepts/other-module]] — Brief reason
-- [[../concepts/another-module]] — Brief reason
+## Consequences
+- Positive: ...
+- Negative: ...
 
-## Related
-- [[../procedures/some-procedure]] — Uses this module
-- [[../decisions/some-decision]] — Design choice related to this module
+## Superseded By
+(If status: superseded) Link to the new decision.
+
+## References
+- [[wiki/raw/evidence-file]] — supporting evidence
+- [[entity-name]] — affected entity
+- External: <https://example.com>
