@@ -1,5 +1,5 @@
 ---
-name: repo-structurer
+name: ouroboros
 description: "Transform a project repo into Trivium-aligned 4-layer structure: raw/ (What=Code), graphify/ (How bridge), wiki/ (Why), spec/ (How 施工藍圖)"
 ---
 
