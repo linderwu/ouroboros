@@ -49,22 +49,27 @@ rsync -av --exclude='node_modules' --exclude='.git' --exclude='dist' --exclude='
 echo "raw/ done"
 ```
 
-### Step 4 - Run graphify on raw/ (function-level nodes)
+### Step 4 - Run /graphify on raw/ (REQUIRED — do not skip)
 
-Use graphify to extract function-level graph. Run from raw/ directory:
+**This step is mandatory.** The `graphify/` layer is the core of this format; it MUST be generated.
 
-```bash
-cd "$PATH/raw"
-graphify . --output-dir "$PATH/graphify" --mode deep 2>&1 | tail -10
-```
-
-If graphify is not installed:
+1. First ensure graphify is installed:
 ```bash
 pip install graphifyy --quiet --break-system-packages 2>&1 | tail -3
-cd "$PATH/raw" && graphify . --output-dir "$PATH/graphify" --mode deep 2>&1 | tail -10
 ```
 
-Graphify outputs: `graph.html`, `GRAPH_REPORT.md`, `graph.json`
+2. Then invoke the graphify skill from the raw/ directory:
+```bash
+cd "$PATH/raw"
+/graphify . --output-dir "$PATH/graphify" --mode deep 2>&1 | tail -10
+```
+
+This MUST produce these files in `graphify/`:
+- `graph.html` — interactive visualization
+- `graph.json` — raw graph data (function-level nodes with call/import edges)
+- `GRAPH_REPORT.md` — community detection, god nodes, surprising connections
+
+If graphify fails, do NOT proceed to Step 5. Stop and report the error. The wiki and spec layers depend on graph.json for identifying hub functions and cross-module edges.
 
 ### Step 5 - Extract wiki/ content (concepts + procedures)
 
@@ -153,6 +158,7 @@ spec/         — openspec-format specifications
 
 ## Constraints
 
+- **Step 4 (/graphify) is MANDATORY — do not skip or replace with manual extraction**
 - Do NOT modify anything in `raw/` after copying
 - `wiki/` and `spec/` are editable; keep them in sync with code changes
 - If graphify fails on large repos, run on subdirectories first
