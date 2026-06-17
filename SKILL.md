@@ -149,6 +149,13 @@ For each meaningful module, create:
 - `wiki/patterns/[issue-name].md` — runtime-learned: known issues, debug clues, workarounds
 - `wiki/reference/[external-resource].md` — external references: API docs, third-party docs, citations
 
+**Filename convention:** `[noun-phrase].md` — use descriptive nouns, not verbs. Example filenames:
+- `concepts/auth-service.md` — not `Authentication.md`
+- `procedures/order-checkout-flow.md` — not `Checkout.md`
+- `decisions/timeout-500ms.md` — not `TimeoutDecision.md`
+- `patterns/ocr-timeout-300to500.md` — not `KnownIssue1.md`
+- `reference/supabase-postgres-spec.md` — not `Doc.md`
+
 Base wiki pages on graphify's graph.json:
 - Hub functions (high-degree nodes) → core concepts
 - Community clusters → module-level procedures
