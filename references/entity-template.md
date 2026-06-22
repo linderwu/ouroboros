@@ -43,5 +43,5 @@ Where this entity sits in the runtime flow:
 - [[concept-decision-name]] — design choice that shaped this entity
 
 ## References
-- [[wiki/raw/source-file]] — supporting evidence
+- [[raw/source-file]] — supporting evidence (cite `raw/` directly, never `wiki/raw/`)
 - External: <https://example.com>

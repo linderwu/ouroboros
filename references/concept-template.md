@@ -37,6 +37,6 @@ What was chosen?
 (If status: superseded) Link to the new decision.
 
 ## References
-- [[wiki/raw/evidence-file]] — supporting evidence
+- [[raw/evidence-file]] — supporting evidence (cite `raw/` directly, never `wiki/raw/`)
 - [[entity-name]] — affected entity
 - External: <https://example.com>

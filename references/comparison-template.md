@@ -33,5 +33,5 @@ Which repos are affected: `[[repos/<repo>/entity]]` ...
 
 ## References
 - [[concept-decision-name]]
-- [[wiki/raw/evidence-file]]
+- [[raw/evidence-file]]
 - External: <https://example.com>

@@ -36,6 +36,6 @@ How to identify this pattern in logs or metrics.
 - [[concept-decision-name]] — design decision that influenced this
 
 ## References
-- [[wiki/raw/incident-record]] — incident that first surfaced this
+- [[raw/incident-record]] — incident that first surfaced this (cite `raw/` directly, never `wiki/raw/`)
 - Internal logs: ...
 - External: <https://example.com>

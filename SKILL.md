@@ -23,7 +23,8 @@ workspace/
                    #   Bridges multi-repo relationships
   wiki/           # Rhetoric Layer (Why + procedural architecture)
                    #   Curated, PR-reviewed. NOT auto-generated.
-    raw/          #   evidence (append-only) — incident records, log snapshots
+                   #   Wiki pages cite evidence via [[raw/YYYY-MM-DD-...]] wikilinks
+                   #   There is NO wiki/raw/ — raw/ is the single evidence source.
     entities/     #   actors (services, modules, deps)
     concepts/     #   design decisions, tradeoffs
     patterns/     #   runtime experience, debug clues
@@ -38,15 +39,19 @@ workspace/
 
 | Layer          | Trivium    | Role                                        | Mutability         |
 |----------------|------------|---------------------------------------------|--------------------|
-| `raw/`         | Grammar    | Evidence / 證據層 — original inputs         | Immutable, append-only |
+| `raw/`         | Grammar    | **Sole** canonical evidence layer — original inputs (PM spec, meeting notes, external refs, logs) | Immutable, append-only |
 | `repos/`       | —          | Actual code (production source of truth)    | Mutable (via git) |
 | `graphify/`    | Logic      | Connection bridge — relations               | Read-only output    |
 | `wiki/`        | Rhetoric   | Decisions + procedural architecture + links | Curated via PR      |
 | `spec/`        | Logic      | Construction blueprint / contract           | Mutable (via PR)    |
 
+**Canonical evidence rule**: `raw/` is the **single canonical evidence layer** in the system.
+There is **no `wiki/raw/`**. Wiki pages that need to cite evidence use `[[raw/YYYY-MM-DD-source-type]]` wikilinks directly. There is exactly one place where evidence lives, exactly one place where it can be appended, and exactly one place where it can be read as the source of truth.
+
 **Key shifts from prior version:**
 - `raw/` is now **evidence layer**, not code. Real code lives in `repos/`.
-- `wiki/` now also captures **procedural architecture** (how modules relate, call graph narratives, runbook-level descriptions) via wikilinks — but wiki is still not the source of truth for code.
+- `wiki/raw/` was previously a parallel evidence layer; this is **removed in v2.4.1** to eliminate double-truth confusion.
+- `wiki/` now also captures **procedural architecture** (how modules relate, call graph narratives, runbook-level descriptions) via wikilinks — but wiki is still not the source of truth for code or evidence.
 - `graphify/` is explicitly the **connection bridge** — it links wiki entries, code, and specs across repos.
 - `repos/` supports **multiple repositories** (frontend / backend / shared-types / etc).
 
@@ -58,7 +63,7 @@ workspace/
 | 這個 module 跟誰連動 / call graph     | `graphify/` + Graphify MCP (`find_dependents`) |
 | API schema / 介面契約                | `spec/` (OpenSpec)                       |
 | 程式碼在哪 / 怎麼改                  | `repos/<repo>/`                          |
-| 證據來源 / 會議紀錄 / 外部參考       | `raw/` 或 `wiki/raw/`                    |
+| 證據來源 / 會議紀錄 / 外部參考       | `raw/`（唯一 evidence layer）            |
 | 程序架構 / 模組關係 / 運作脈絡        | `wiki/` + `graphify/`                    |
 | 改了會影響誰                          | `graphify/` MCP (`find_dependents`)      |
 | 這是 bug 還是故意的                  | `graphify/` → `spec/` → `wiki/` (strict order) |
@@ -84,7 +89,7 @@ workspace/
 
 0.1 Accept target path (or workspace root for multi-repo)
 0.2 Identify scope: single repo vs multi-repo
-0.3 Inventory existing evidence in `raw/` and `wiki/raw/` — DO NOT mutate
+0.3 Inventory existing evidence in `raw/` — DO NOT mutate (single canonical evidence layer)
 
 ### Phase 1 — Evidence Preservation (raw/ as Evidence Layer)
 
@@ -156,7 +161,6 @@ mkdir -p \
   "$PATH/raw" \
   "$PATH/repos" \
   "$PATH/graphify" \
-  "$PATH/wiki/raw" \
   "$PATH/wiki/entities" \
   "$PATH/wiki/concepts" \
   "$PATH/patterns" \
@@ -243,12 +247,11 @@ wiki/
 ```
 
 **Wiki layer rules:**
-- `wiki/raw/`: immutable. New files only. `YYYY-MM-DD-source-type.md`
-- `wiki/entities/`: `[entity-name].md`. Cite repos via `[[repos/repo-a/path/to/file]]`.
+- `wiki/entities/`: `[entity-name].md`. Cite repos via `[[repos/repo-a/path/to/file]]`. Cite evidence via `[[raw/YYYY-MM-DD-source-type]]` (single canonical evidence layer — there is no `wiki/raw/`).
 - `wiki/concepts/`: `[decision-name].md`. Never delete — mark `status: superseded`.
 - `wiki/patterns/`: `[pattern-name].md`. Trigger: post-incident, post-mortem, perf observation.
 - `wiki/comparisons/`: `[topic-a]-vs-[topic-b].md`.
-- **All pages**: YAML frontmatter + `[[wikilinks]]` between related pages.
+- **All pages**: YAML frontmatter + `[[wikilinks]]` between related pages. Evidence citations use `[[raw/YYYY-MM-DD-source-type]]` — never `[[wiki/raw/...]]` (the latter does not exist).
 - **Procedural architecture** via wikilinks:
   - Flow: `[[entity-a]] -> [[entity-b]] -> [[entity-c]]`
   - Conditional: `if [[pattern-x]] then [[entity-y]]`
@@ -354,11 +357,10 @@ git push -u origin wiki/initial-curation
 
 ```
 workspace/
-  raw/           — Evidence (append-only, NOT code)
+  raw/           — Evidence (append-only, NOT code) — single canonical evidence source
   repos/         — Actual code (one or more repos)
   graphify/      — Connection bridge (per-repo + cross-repo)
-  wiki/          — Why + procedural architecture (PR-reviewed)
-    raw/         —   evidence mirror
+  wiki/          — Why + procedural architecture (PR-reviewed); cites raw/ via wikilinks
     entities/    —   services, modules, deps (cite repos paths)
     concepts/    —   design decisions
     patterns/    —   runtime experience
@@ -380,7 +382,7 @@ End User → Chatbot RAG
 
 ```
 /opt/workspace/
-├── raw/               # shared evidence (cross-repo PM specs, meeting notes)
+├── raw/               # shared evidence (cross-repo PM specs, meeting notes) — single source of truth
 ├── repos/             # actual code, one dir per repo
 │   ├── frontend/
 │   ├── backend/
@@ -391,8 +393,7 @@ End User → Chatbot RAG
 │   ├── backend/
 │   └── shared-types/
 ├── graphify-out/      # merged cross-repo graph (NOT in any single repo)
-├── wiki/              # shared wiki (cross-repo concepts + patterns)
-│   ├── raw/
+├── wiki/              # shared wiki (cross-repo concepts + patterns); cites raw/ via wikilinks
 │   ├── entities/      # entity pages cite repos paths
 │   ├── concepts/
 │   ├── patterns/
@@ -408,7 +409,8 @@ End User → Chatbot RAG
 
 - **Step 4 (/graphify) is MANDATORY — do not skip**
 - **Wiki content MUST go through PR review — never auto-merge**
-- Do NOT modify `raw/` or `wiki/raw/` after creation (append-only)
+- Do NOT modify `raw/` after creation (append-only; `raw/` is the single canonical evidence layer)
+- Do NOT create `wiki/raw/` or any parallel evidence layer — wiki pages must cite `raw/` directly via wikilinks
 - Do NOT put code in `raw/` — code belongs in `repos/`
 - `repos/<repo>/` is the only place to edit code
 - `wiki/concepts/`: never delete, mark superseded instead
@@ -423,3 +425,4 @@ End User → Chatbot RAG
 - v2.2: OpenSpec separation from wiki
 - v2.3: Git-native Knowledge Wiki + mandatory PR review
 - **v2.4: Evidence Layer (raw), Code Layer (repos), Connection Bridge (graphify), Procedural Architecture in wiki, multi-repo support**
+- **v2.4.1: Removed `wiki/raw/` entirely. `raw/` is the single canonical evidence source. Wiki pages cite `raw/` via `[[raw/...]]` wikilinks — no parallel evidence layer.**
