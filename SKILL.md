@@ -83,7 +83,24 @@ There is **no `wiki/raw/`**. Wiki pages that need to cite evidence use `[[raw/YY
 2. **OpenSpec** (compare spec vs reality)
 3. **Wiki** search (reason attribution)
 
-## Execution Order (strict — do not reorder)
+## Execution Modes
+
+Ouroboros 支援三種執行模式：
+
+| 模式 | 適用 | 順序嚴格度 |
+|------|------|-----------|
+| **waterfall** | 大型專案（>20 檔案） | 嚴格 |
+| **iterative** | 中小型專案（default） | 靈活 |
+| **incremental** | 現有專案添加 wiki | 自由 entry point |
+
+**使用方式：**
+```bash
+export OUROBOROS_MODE=iterative  # waterfall | iterative | incremental
+```
+
+**在 iterative 模式下，允許任意 Phase 之間來回跳轉。**
+
+## Phase Execution Order
 
 ### Phase 0 — Size Assessment
 
@@ -333,16 +350,18 @@ wiki/
 - **All pages**: YAML frontmatter + `[[wikilinks]]` between related pages. Evidence citations use `[[raw/YYYY-MM-DD-source-type]]` — never `[[wiki/raw/...]]` (the latter does not exist).
 - **Procedural architecture** via wikilinks:
   - Flow: `[[entity-a]] -> [[entity-b]] -> [[entity-c]]`
-  - Conditional: `if [[pattern-x]] then [[entity-y]]`
+  - Conditional: `{{if condition}} [[page-a]] {{else}} [[page-b]] {{endif}}`
+  - Concurrency: `{{concurrent}} [[task-1]] | [[task-2]] {{/concurrent}}`
+  - Loop: `{{repeat 3}} [[retry-task]] {{/repeat}}`
   - Cross-repo: `[[repos/frontend/entity]] ↔ [[repos/backend/entity]]`
 - All pages: PR review before merge. NEVER auto-merge.
 
-**Frontmatter schema** (see `wiki/SCHEMA.md`):
+**Frontmatter schema** (see `ouroboros/references/frontmatter_schema.json`):
 ```yaml
 title: string
-type: entity | concept | pattern | comparison | raw
+type: entity | concept | pattern | comparison | procedure | raw
 tags: [string]
-status: active | superseded | deprecated  # concepts only
+status: active | superseded | archived | draft | deprecated  # all types have lifecycle
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 ```
@@ -352,7 +371,14 @@ updated: YYYY-MM-DD
 - concept: Summary, Context, Decision, Alternatives Considered, Consequences, References
 - pattern: Summary, Symptom, Root Cause, Workaround, Detection, Related, References
 - comparison: Summary, Dimensions, When to Choose A/B, Our Context, References
+- procedure: Summary, Prerequisite, Steps, Expected Result, Error Handling, Related
 - raw: Source, Date, Content (preserved as-is), Tags, Referenced By
+
+**Lifecycle rules**:
+- All types support `status: active | superseded | archived | draft | deprecated`
+- `superseded` — 被新版本取代，但保留參考
+- `archived` — 過時但有歷史價值
+- `deprecated` — 不再建議使用
 
 ## Step 6 - Generate spec/ (OpenSpec — How 施工藍圖 / contract)
 
@@ -507,3 +533,97 @@ End User → Chatbot RAG
 - **v2.4: Evidence Layer (raw), Code Layer (repos), Connection Bridge (graphify), Procedural Architecture in wiki, multi-repo support**
 - **v2.4.1: Removed `wiki/raw/` entirely. `raw/` is the single canonical evidence source. Wiki pages cite `raw/` via `[[raw/...]]` wikilinks — no parallel evidence layer.**
 - **v2.5: Size-based tool selection — LLM擅長理解小型程式碼，工具增強大型專案。Phase 0 新增大小評估，Phase 3 條件化（SMALL跳過、M只能graphify、L標配codebase-memory-mcp）。**
+- **v2.6: Entropy Management + Enforcement Hooks — 新增熵管理、去重偵測、wikilinks完整性檢查、程式化CI鉤子。**
+- **v2.7: Design Adjustments — 新增 Execution Modes（iterative/waterfall/incremental）、擴展型別系統（procedure/deprecated/lifecycle）、流程表達增強（分支/並發/迴圈）。**
+
+---
+
+## Phase 1.5: Entropy Management (熵管理)
+
+### 問題診斷
+
+Ouroboros 只設計了「怎麼把知識寫進去」，幾乎沒設計「怎麼讓它不爛」。跑過幾個月會被自己的熗壓垮。
+
+### 解決方案：staleness_rules.yaml
+
+```yaml
+# ouroboros/references/staleness_rules.yaml
+staleness_rules:
+  entity:
+    warning_threshold_days: 14
+    archive_threshold_days: 30
+  
+  concept:
+    warning_threshold_days: 30
+    archive_threshold_days: 60
+  
+  pattern:
+    warning_threshold_days: 60
+    archive_threshold_days: 120
+```
+
+### 自動歸檔腳本
+
+```bash
+# 掃描並報告過時頁面（dry-run）
+python3 ouroboros/scripts/auto_archive_hook.py
+
+# 實際執行歸檔
+python3 ouroboros/scripts/auto_archive_hook.py --execute
+```
+
+### 去重偵測
+
+```bash
+# 偵測近義重複頁面
+python3 ouroboros/scripts/deduplication_hook.py
+```
+
+---
+
+## Phase 2.5: Enforcement Hooks (強制力)
+
+### 問題診斷
+
+ Ouroboros 全靠自然語言語氣（MUST/NEVER），沒有任何 hook、CI、schema validator 在程式層擋。
+
+### Wikilinks 完整性檢查
+
+```bash
+# 檢查所有 [[wikilinks]] 是否指向存在的頁面
+python3 ouroboros/scripts/wikilinks_integrity_hook.py
+```
+
+**會阻擋 merge 如果有斷鏈存在。**
+
+### 程式化 CI 鉤子
+
+建議的 Git hook 設定：
+
+```yaml
+# ouroboros_ci.yaml（建議的 CI 設定）
+hooks:
+  pre-commit:
+    - validate_frontmatter_schema
+    - check_wikilinks_integrity
+    - scan_staleness
+  
+  pre-merge:
+    - deduplication_check
+    - entity_concept_type_validation
+    - link_integrity_report
+```
+
+### Frontmatter Schema 驗證
+
+```json
+// ouroboros/references/frontmatter_schema.json
+{
+  "required": ["title", "type", "updated"],
+  "properties": {
+    "type": {"enum": ["entity", "concept", "pattern", "comparison", "procedure"]},
+    "status": {"enum": ["active", "superseded", "archived", "draft", "deprecated"]},
+    "updated": {"type": "string", "format": "date"}
+  }
+}
+```

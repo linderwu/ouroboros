@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Ouroboros Wiki Page Frontmatter Schema",
+  "description": "Frontmatter schema for Ouroboros wiki pages (entities, concepts, patterns, comparisons, procedures)",
+  "type": "object",
+  "required": ["title", "type", "updated"],
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Human-readable page title"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["entity", "concept", "pattern", "comparison", "procedure"],
+      "description": "Page type — determines content structure and lifecycle rules"
+    },
+    "tags": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Free-form tags for categorization"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "superseded", "archived", "draft", "deprecated"],
+      "description": "Content status — controls staleness evaluation"
+    },
+    "created": {
+      "type": "string",
+      "format": "date",
+      "description": "Creation date (YYYY-MM-DD)"
+    },
+    "updated": {
+      "type": "string",
+      "format": "date",
+      "description": "Last update date (YYYY-MM-DD) — used for staleness calculation"
+    },
+    "archived": {
+      "type": "boolean",
+      "description": "Whether this page has been archived"
+    },
+    "archived_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Archive timestamp"
+    },
+    "archive_reason": {
+      "type": "string",
+      "description": "Reason for archival"
+    },
+    "supersedes": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "List of page names this supersedes"
+    },
+    "superseded_by": {
+      "type": "string",
+      "description": "Name of page that supersedes this one"
+    },
+    "related": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Related page names (wikilinks without brackets)"
+    }
+  }
+}

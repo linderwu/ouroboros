@@ -1,0 +1,170 @@
+# Ouroboros Recall Mechanism
+# Phase 3: Semantic Search Integration
+
+## 問題診斷
+
+Ouroboros 宣稱支援 Chatbot RAG，但 semantic search 元件是空的（只有一行文字提及，實際不存在）。
+
+## 解決方案
+
+### 方案 A：整合現有工具（推薦）
+
+```bash
+# 安裝所需工具
+uv tool install graphifyy
+curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash
+
+# 版本鎖定
+cat > ouroboros/references/versions.lock
+graphifyy==2.1.4
+codebase-memory-mcp==1.2.1
+```
+
+### 方案 B：Ouroboros Wiki Search API（自建）
+
+對於中小型 wiki，提供基於 wikilink 圖的搜尋：
+
+```python
+# ouroboros/scripts/wiki_search.py
+import json
+from pathlib import Path
+from typing import List, Dict
+
+class WikiSearch:
+    def __init__(self, wiki_dir: Path):
+        self.wiki_dir = wiki_dir
+        self.index = self._build_index()
+    
+    def _build_index(self) -> Dict:
+        """建立簡單的標題/標籤索引"""
+        index = {"by_title": {}, "by_tag": {}, "by_type": {}}
+        
+        for md_file in self.wiki_dir.rglob("*.md"):
+            if md_file.stem.startswith("index"):
+                continue
+            
+            # 讀取 frontmatter
+            content = md_file.read_text(errors="ignore")
+            fm = self._parse_frontmatter(content)
+            
+            title = fm.get("title", md_file.stem)
+            page_type = fm.get("type", "unknown")
+            tags = fm.get("tags", [])
+            
+            # 建立索引
+            index["by_title"][title.lower()] = str(md_file.relative_to(self.wiki_dir))
+            
+            for tag in tags:
+                if tag not in index["by_tag"]:
+                    index["by_tag"][tag] = []
+                index["by_tag"][tag].append(str(md_file.relative_to(self.wiki_dir)))
+            
+            if page_type not in index["by_type"]:
+                index["by_type"][page_type] = []
+            index["by_type"][page_type].append(str(md_file.relative_to(self.wiki_dir)))
+        
+        return index
+    
+    def search_by_query(self, query: str, limit: int = 5) -> List[Dict]:
+        """關鍵字搜尋"""
+        query_lower = query.lower()
+        results = []
+        
+        # 標題匹配
+        for title, path in self.index["by_title"].items():
+            if query_lower in title:
+                results.append({"title": title, "path": path, "score": 1.0})
+        
+        # 標籤匹配
+        for tag, paths in self.index["by_tag"].items():
+            if query_lower in tag:
+                for path in paths:
+                    if path not in [r["path"] for r in results]:
+                        results.append({"title": tag, "path": path, "score": 0.8})
+        
+        # 排序並返回
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results[:limit]
+    
+    def get_page_context(self, page_path: str, max_chars: int = 500) -> str:
+        """取得頁面摘要"""
+        full_path = self.wiki_dir / page_path
+        content = full_path.read_text(errors="ignore")
+        
+        # 去除 frontmatter
+        if content.startswith("---"):
+            end = content.find("---", 3)
+            if end > 0:
+                content = content[end+3:]
+        
+        return content[:max_chars].strip()
+```
+
+## 整合方式
+
+### 1. 本地模型召回（安全優先）
+
+```yaml
+# recall_config.yaml
+recall:
+  # 首選：本地語意搜尋（保護資料不外洩）
+  primary:
+    provider: "wiki_search"  # 自建簡單索引
+    index_path: ".ouroboros/search_index.json"
+  
+  # 備選：codebase-memory-mcp（若已安裝）
+  fallback:
+    provider: "codebase-memory-mcp"
+    enabled: true
+  
+  # 安全設定
+  security:
+    local_only: true  # 不允許外部 API 呼叫
+    no_cloud_upload: true
+```
+
+### 2. Read Workflow 整合
+
+```
+User Query
+    ↓
+WikiSearch API（或 codebase-memory-mcp）
+    ↓
+Top-K 相關頁面
+    ↓
+Agent Context
+```
+
+### 3. 回饋機制
+
+```python
+# wiki/references/recall_feedback.json
+{
+    "queries": [
+        {
+            "timestamp": "2026-07-08T12:00:00Z",
+            "query": "...",
+            "returned_pages": ["a.md", "b.md"],
+            "user_rating": "helpful" | "not_helpful"
+        }
+    ]
+}
+```
+
+## 召回評估指標
+
+| 指標 | 目標 | 測量方式 |
+|------|------|---------|
+| Precision@3 | >0.7 | 前3結果相關比例 |
+| Recall@5 | >0.8 | 相關結果在 前5 的比例 |
+| 查詢延遲 | <500ms | 端到端延遲 |
+| 斷鏈率 | <5% | 回傳的連結有多少已失效 |
+
+---
+
+## 下一步
+
+1. 安裝 `codebase-memory-mcp` 或 `graphifyy`
+2. 執行一次完整 wiki 索引
+3. 測試召回精確度
+4. 根據回饋調整權重

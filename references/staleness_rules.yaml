@@ -1,0 +1,76 @@
+# Ouroboros Staleness Rules
+# Phase 1: Entropy Management
+
+# 當一條知識多久沒更新，視為過時
+staleness_rules:
+  # 最嚴格：entity 通常是事實，過時就該標記
+  entity:
+    warning_threshold_days: 14
+    archive_threshold_days: 30
+    delete_threshold_days: 365
+
+  # concept 可能在迭代中演進
+  concept:
+    warning_threshold_days: 30
+    archive_threshold_days: 60
+    delete_threshold_days: 365
+
+  # pattern 通常較穩定，但可能有有效期限
+  pattern:
+    warning_threshold_days: 60
+    archive_threshold_days: 120
+    delete_threshold_days: 730
+
+  # comparison 通常是快照，不常更新
+  comparison:
+    warning_threshold_days: 90
+    archive_threshold_days: 180
+    delete_threshold_days: 730
+
+  # procedure 可能過時
+  procedure:
+    warning_threshold_days: 30
+    archive_threshold_days: 60
+    delete_threshold_days: 365
+
+# 自動歸檔設定
+archive_settings:
+  enabled: true
+  archive_dir: ".ouroboros/archive"
+  
+  # 歸檔時自動執行的動作
+  on_archive:
+    - move_to_archive_dir
+    - remove_from_wikilink_graph
+    - add_archive_marker
+  
+  # 歸檔後的鏈接處理
+  archive_link_behavior: "mark_as_stale"  # 或 "remove" 或 "redirect"
+
+# 警告設定
+warning_settings:
+  enabled: true
+  
+  # 警告方式
+  channels:
+    - type: "log"           # 寫入日誌
+      path: ".ouroboros/staleness.log"
+    - type: "comment"       # 在 wiki 頁面留言
+      prefix: "[STALE]"
+  
+  # 警告頻率（每次檢查 vs 每天一次）
+  frequency: "daily"
+
+# 檢查設定
+scan_settings:
+  # 何時掃描
+  trigger:
+    on_merge: true          # PR merge 時檢查
+    on_push: true           # push 時檢查
+    scheduled: "0 2 * * *"  # 每天凌晨 2 點（cron expression）
+  
+  # 影響範圍
+  scope:
+    check_titles: true
+    check_frontmatter: true
+    check_content: false    # 不檢查內容（太慢）

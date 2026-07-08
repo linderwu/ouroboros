@@ -1,0 +1,130 @@
+# Ouroboros Execution Modes
+# Phase 5: Design Adjustment
+
+## 背景
+
+v2.5 的 `Execution Order (strict — do not reorder)` 是理想主義的瀑布式設計。
+真實開發是迭代的——這對小型專案是阻力，對大型專案可能是幫助但也不必強制。
+
+## 解决方案：Execution Modes
+
+```yaml
+# ouroboros/references/execution_modes.yaml
+execution_modes:
+  # 嚴格瀑布模式（預設 for 大型專案）
+  waterfall:
+    description: "嚴格按照 Phase 0→1→2→3→4→5 順序執行"
+    phases:
+      - phase_0_size_assessment
+      - phase_1_evidence
+      - phase_2_code_inventory
+      - phase_3_graphify
+      - phase_4_knowledge_curation
+      - phase_5_audit
+    enforce_order: true
+  
+  # 迭代模式（預設 for 中小型）
+  iterative:
+    description: "允許任意階段來回跳轉，根據實際需要"
+    phases:
+      - phase_0_size_assessment
+      - phase_1_evidence
+      - phase_2_code_inventory
+      - phase_3_graphify
+      - phase_4_knowledge_curation
+      - phase_5_audit
+    enforce_order: false  # 關鍵改變
+    allow_phase_skip: true
+    allow_revisit: true
+  
+  # 增量模式（for 現有專案添加 wiki）
+  incremental:
+    description: "不需要完整執行，補間隙為主"
+    entry_point: "phase_4_knowledge_curation"  # 直接從這裡開始
+    phases:
+      - phase_4_knowledge_curation
+      - phase_5_audit
+    enforce_order: false
+
+# 預設選擇邏輯
+default_mode:
+  # 根據大小自動選擇
+  auto_select:
+    small: "iterative"
+    medium: "iterative"
+    large: "waterfall"
+    
+  # 可手動覆寫
+  manual_override: null  # 設為 "waterfall" | "iterative" | "incremental" 來覆寫
+```
+
+## Phase 跳轉範例
+
+### 迭代模式允許的跳轉
+
+```
+✓ phase_0 → phase_1 → phase_4 → phase_2 → phase_3 → phase_4 → phase_5
+✓ phase_0 → phase_2 → phase_4（跳過 phase_1/3 如果不必要）
+✓ phase_4 → phase_1 → phase_4（發現需要更多 evidence，回頭補）
+✓ phase_5 → phase_4（audit 發現問題，修訂 wiki）
+```
+
+### 嚴格模式的跳轉（不允許）
+
+```
+✗ phase_0 → phase_2（跳過 phase_1 — 不允許）
+✗ phase_3 → phase_1（往回跳 — 不允許）
+✗ phase_4 → phase_3（往回跳 — 不允許）
+```
+
+## 使用方式
+
+```bash
+# 設定執行模式（可選）
+export OUROBOROS_MODE=iterative  # 或 waterfall / incremental
+
+# 或在 SKILL.md 中宣告
+# ```yaml
+# execution_mode: iterative
+# ```
+
+# 驗證當前模式
+python3 ouroboros/scripts/check_mode.py
+```
+
+## 更新 SKILL.md 中的執行順序章節
+
+原文（v2.5）：
+```
+## Execution Order (strict — do not reorder)
+### Phase 0 — Size Assessment
+...
+### Phase 1 — Evidence Preservation (raw/ as Evidence Layer)
+...
+```
+
+更新為（v2.6）：
+```
+## Execution Modes
+
+Ouroboros 支援三種執行模式，預設根據專案大小自動選擇：
+
+| 大小 | 建議模式 | 理由 |
+|------|---------|------|
+| SMALL (<5 檔案) | iterative | 工具成本 > LLM 自身理解 |
+| MEDIUM (5-20) | iterative | 快速迭代，不需要嚴格順序 |
+| LARGE (>20) | waterfall | 需要嚴格管理復雜度 |
+
+可用 `OUROBOROS_MODE` 環境變數手動覆寫。
+
+## Phase Execution Order
+
+### Phase 0 — Size Assessment（必做）
+### Phase 1 — Evidence Preservation（必做）
+### Phase 2 — Code Inventory（必做）
+### Phase 3 — Graphify（SMALL 跳過）
+### Phase 4 — Knowledge Curation（必做）
+### Phase 5 — Audit（必做）
+
+**在 iterative 模式下，允許任意 phase 之間來回跳轉。**
+```
