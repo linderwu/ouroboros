@@ -535,6 +535,7 @@ End User → Chatbot RAG
 - **v2.5: Size-based tool selection — LLM擅長理解小型程式碼，工具增強大型專案。Phase 0 新增大小評估，Phase 3 條件化（SMALL跳過、M只能graphify、L標配codebase-memory-mcp）。**
 - **v2.6: Entropy Management + Enforcement Hooks — 新增熵管理、去重偵測、wikilinks完整性檢查、程式化CI鉤子。**
 - **v2.7: Design Adjustments — 新增 Execution Modes（iterative/waterfall/incremental）、擴展型別系統（procedure/deprecated/lifecycle）、流程表達增強（分支/並發/迴圈）。**
+- **v2.8: Working Memory Integration — 新增三層記憶架構（Knowledge Base / Session Memory / Working Memory）、Progress Tracker、Audit Log。**
 
 ---
 
@@ -627,3 +628,67 @@ hooks:
   }
 }
 ```
+
+---
+
+## Phase 6: Working Memory Integration (工作記憶)
+
+### 問題診斷
+
+Ouroboros 只做「codebase 知識庫」，缺少 agent 工作記憶層：
+- 沒有 progress 追蹤
+- 沒有操作踩坑記錄
+- 沒有 baseline/測試記錄
+- 沒有 shared/private 可見範圍分級
+
+### 解決方案：三層記憶架構
+
+```
+┌─────────────────────────────────────────────────┐
+│  Ouroboros Knowledge Base（長期知識）            │
+│  - wiki/ — PR-reviewed, curated                 │
+│  - 回答「為什麼這樣設計」                        │
+└─────────────────────────────────────────────────┘
+                      ↑
+┌─────────────────────────────────────────────────┐
+│  Session Memory（當前任務）                      │
+│  - memory/YYYY-MM-DD.md                         │
+│  - 回答「現在在處理什麼」                        │
+└─────────────────────────────────────────────────┘
+                      ↑
+┌─────────────────────────────────────────────────┐
+│  Working Memory（當下操作）                      │
+│  - HEARTBEAT.md, task_queue.json                │
+│  - 回答「我現在在做什麼」                        │
+└─────────────────────────────────────────────────┘
+```
+
+### Progress Tracker
+
+```bash
+# 開始 Phase
+python3 ouroboros/scripts/progress_tracker.py start "phase_1"
+
+# 完成 Phase
+python3 ouroboros/scripts/progress_tracker.py complete "phase_1"
+
+# 記錄決策
+python3 ouroboros/scripts/progress_tracker.py decision \
+  --decision "採用 iterative mode" \
+  --reason "中小型專案不需要嚴格順序"
+
+# 查看進度
+python3 ouroboros/scripts/progress_tracker.py status
+
+# 查看審計日誌
+python3 ouroboros/scripts/progress_tracker.py audit --limit 20
+```
+
+### Session Memory Hook
+
+```bash
+# 記錄 entry
+python3 ouroboros/scripts/session_memory_hook.py --entry "完成 Phase 1" --category "Ouroboros"
+
+# 記錄決策
+python3 ouroboros/scripts/session_memory_hook.py --decision "採用某方案" --reason "因為..."

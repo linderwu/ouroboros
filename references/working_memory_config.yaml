@@ -1,0 +1,264 @@
+# Ouroboros Working Memory Integration
+# Phase 6: Scope Expansion
+
+## 問題診斷
+
+Ouroboros 只做「codebase 知識庫」，缺少 agent 工作記憶層：
+- 沒有 progress追蹤
+- 沒有操作踩坑記錄
+- 沒有 baseline/測試記錄
+- 沒有 shared/private 可見範圍分級
+
+## 解決方案：三層記憶架構
+
+```
+┌─────────────────────────────────────────────────┐
+│  Ouroboros Knowledge Base（長期知識）            │
+│  - 結構化的 wiki pages                           │
+│  - PR-reviewed, curated                         │
+│  - 回答「為什麼這樣設計」                        │
+└─────────────────────────────────────────────────┘
+                      ↑ wiki/
+                      ↓
+┌─────────────────────────────────────────────────┐
+│  Session Memory（當前任務）                      │
+│  - memory/YYYY-MM-DD.md                         │
+│  - 當前 session 的觀察、决策、進度               │
+│  - 回答「現在在處理什麼」                        │
+└─────────────────────────────────────────────────┘
+                      ↑ daily notes
+                      ↓
+┌─────────────────────────────────────────────────┐
+│  Working Memory（當下操作）                      │
+│  - HEARTBEAT.md                                 │
+│  - task_queue.json                              │
+│  - inbox/                                       │
+│  - 回答「我現在在做什麼」                        │
+└─────────────────────────────────────────────────┘
+```
+
+## 實作：session_memory_hook.py
+
+```python
+# ouroboros/scripts/session_memory_hook.py
+"""
+在每次 Ouroboros 執行後，自動更新 session memory
+"""
+
+from pathlib import Path
+from datetime import datetime
+
+SKILL_DIR = Path(__file__).parent.parent
+SESSION_MEMORY_DIR = SKILL_DIR.parent.parent / "memory"
+
+def record_phase_completion(phase: str, results: dict):
+    """記錄 Phase 完成狀態到 session memory"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    memory_file = SESSION_MEMORY_DIR / f"{today}.md"
+    
+    entry = f"""
+## Ouroboros Phase Completion
+
+- **Phase**: {phase}
+- **Timestamp**: {datetime.now().isoformat()}
+- **Results**: {results}
+"""
+    
+    with open(memory_file, "a") as f:
+        f.write(entry)
+
+def record_decision(decision: str, reason: str):
+    """記錄關鍵決策"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    memory_file = SESSION_MEMORY_DIR / f"{today}.md"
+    
+    entry = f"""
+## Ouroboros Decision
+
+- **Decision**: {decision}
+- **Reason**: {reason}
+- **Timestamp**: {datetime.now().isoformat()}
+"""
+    
+    with open(memory_file, "a") as f:
+        f.write(entry)
+```
+
+## 實作：progress_tracker.py
+
+```python
+# ouroboros/scripts/progress_tracker.py
+"""
+追蹤 Ouroboros 執行進度
+"""
+
+from pathlib import Path
+import json
+
+class ProgressTracker:
+    def __init__(self, workspace_path: Path):
+        self.workspace = workspace_path
+        self.progress_file = workspace / ".ouroboros" / "progress.json"
+    
+    def init(self):
+        """初始化追蹤檔"""
+        self.progress_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        if not self.progress_file.exists():
+            self._write({
+                "phases": {},
+                "decisions": [],
+                "current_phase": None
+            })
+    
+    def start_phase(self, phase: str):
+        """標記 Phase 開始"""
+        progress = self._read()
+        progress["current_phase"] = phase
+        progress["phases"][phase] = {
+            "status": "in_progress",
+            "started_at": datetime.now().isoformat()
+        }
+        self._write(progress)
+    
+    def complete_phase(self, phase: str, results: dict):
+        """標記 Phase 完成"""
+        progress = self._read()
+        if phase in progress["phases"]:
+            progress["phases"][phase]["status"] = "completed"
+            progress["phases"][phase]["completed_at"] = datetime.now().isoformat()
+            progress["phases"][phase]["results"] = results
+        self._write(progress)
+    
+    def add_decision(self, decision: str, reason: str):
+        """新增決策記錄"""
+        progress = self._read()
+        progress["decisions"].append({
+            "timestamp": datetime.now().isoformat(),
+            "decision": decision,
+            "reason": reason
+        })
+        self._write(progress)
+    
+    def get_summary(self) -> str:
+        """取得進度摘要"""
+        progress = self._read()
+        
+        lines = ["## Ouroboros Progress\n"]
+        
+        for phase, info in progress["phases"].items():
+            status = info["status"]
+            emoji = "✅" if status == "completed" else "🔄" if status == "in_progress" else "⏳"
+            lines.append(f"{emoji} {phase}: {status}")
+        
+        return "\n".join(lines)
+```
+
+## 實作：shared_private_scope.yaml
+
+```yaml
+# ouroboros/references/shared_private_scope.yaml
+# 可見範圍設定
+
+visibility_layers:
+  # 完全公開 — 所有 agent 可讀
+  public:
+    - wiki/entities/
+    - wiki/concepts/
+    - wiki/patterns/
+    - wiki/comparisons/
+    - spec/
+  
+  # 團隊共享 — 同 team 的 agent 可讀
+  team_shared:
+    - memory/           # daily notes
+    - raw/              # evidence
+    - graphify/         # 連接圖
+  
+  # Agent 私有 — 只有擁有者可讀
+  agent_private:
+    - memory/HEARTBEAT.md
+    - memory/task_queue.json
+    - .ouroboros/progress.json
+
+# Wiki 頁面預設可見性
+wiki_default: public  # entity/concept/pattern/comparison 預設公開
+
+# 變更可見性
+change_visibility:
+  - type: "command"
+    syntax: "[[visibility: public|team_shared|private]]"
+    placement: "frontmatter"
+```
+
+## 實作：audit_log.yaml
+
+```yaml
+# ouroboros/references/audit_log.yaml
+# 審計日誌設定
+
+audit_enabled: true
+
+log_events:
+  - event: "page_created"
+    fields: ["page_path", "page_type", "creator"]
+  
+  - event: "page_updated"
+    fields: ["page_path", "changes", "editor"]
+  
+  - event: "page_archived"
+    fields: ["page_path", "reason", "archiver"]
+  
+  - event: "phase_completed"
+    fields: ["phase", "results"]
+  
+  - event: "decision_made"
+    fields: ["decision", "reason", "decider"]
+
+log_storage: ".ouroboros/audit_log.jsonl"
+
+retention:
+  days: 90
+  archive_after_days: 30
+```
+
+## 整合：Ouroboros 工作記憶佈局
+
+```
+workspace/
+  # === Ouroboros Core ===
+  raw/                    # Evidence（append-only）
+  repos/                  # Code（git-tracked）
+  graphify/               # 連接圖
+  wiki/                   # 長期知識（public）
+  
+  # === Working Memory ===
+  .ouroboros/
+    progress.json         # Phase 進度追蹤
+    audit_log.jsonl       # 審計日誌
+    archive/              # 歸檔頁面
+    search_index.json     # 搜尋索引
+  
+  memory/                 # Session memory
+    YYYY-MM-DD.md         # 每日記錄
+    MEMORY.md             # 長期記憶
+  
+  inbox/                  # 收件匣（待處理）
+    pending_*.md
+  
+  HEARTBEAT.md            # 心跳檢查清單
+
+  # === Private ===
+  .openclaw/              # Agent 私有
+    workspace-*/
+```
+
+---
+
+## 執行順序
+
+1. 建立 `session_memory_hook.py`
+2. 建立 `progress_tracker.py`
+3. 建立 `audit_log.yaml`
+4. 更新 SKILL.md 加入 Phase 6
+5. 實際執行一次完整 audit
