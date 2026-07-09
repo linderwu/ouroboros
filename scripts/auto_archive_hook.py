@@ -15,17 +15,22 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # === Config ===
 SKILL_DIR = Path(__file__).parent.parent
-STALNESS_RULES = SKILL_DIR / "references" / "staleness_rules.yaml"
-WIKI_DIR = SKILL_DIR.parent.parent / "wiki"
+STALENESS_RULES = SKILL_DIR / "references" / "staleness_rules.yaml"
+WORKSPACE_DIR = Path(os.environ.get("OUROBOROS_WORKSPACE_DIR", SKILL_DIR.parent.parent))
+WIKI_DIR = Path(os.environ.get("OUROBOROS_WIKI_DIR", WORKSPACE_DIR / "wiki"))
 ARCHIVE_DIR = SKILL_DIR / ".ouroboros" / "archive"
 LOG_FILE = SKILL_DIR / ".ouroboros" / "staleness.log"
 
 # === Load Config ===
 def load_config() -> dict:
-    if STALNESS_RULES.exists():
-        with open(STALNESS_RULES) as f:
+    if STALENESS_RULES.exists():
+        with open(STALENESS_RULES, encoding="utf-8") as f:
             return yaml.safe_load(f)
     return {"staleness_rules": {}, "archive_settings": {"enabled": False}}
 
@@ -51,7 +56,7 @@ def check_page_staleness(page_path: Path, rules: dict) -> tuple[str, str]:
         return "error", "page_not_found"
     
     # 讀取 frontmatter
-    content = page_path.read_text()
+    content = page_path.read_text(encoding="utf-8", errors="ignore").lstrip("\ufeff")
     frontmatter = {}
     
     if content.startswith("---"):
@@ -102,7 +107,7 @@ def archive_page(page_path: Path, reason: str):
     archive_path.parent.mkdir(parents=True, exist_ok=True)
     
     # 讀取並更新內容
-    content = page_path.read_text()
+    content = page_path.read_text(encoding="utf-8", errors="ignore").lstrip("\ufeff")
     
     # 在 frontmatter 加入歸檔標記
     if content.startswith("---"):
@@ -114,7 +119,7 @@ def archive_page(page_path: Path, reason: str):
         content = "---\n" + fm_text + archived_marker + "---\n" + rest
     
     # 寫入歸檔
-    archive_path.write_text(content)
+    archive_path.write_text(content, encoding="utf-8")
     
     # 刪除原始
     page_path.unlink()
@@ -135,13 +140,16 @@ def log_event(action: str, source: str, dest: str, reason: str):
         "reason": reason
     }
     
-    with open(LOG_FILE, "a") as f:
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
 
 # === Scan Wiki ===
 def scan_wiki(dry_run: bool = True):
     """掃描整個 wiki，檢查 staleness"""
     config = load_config()
+
+    print(f"Workspace: {WORKSPACE_DIR}")
+    print(f"Wiki: {WIKI_DIR}")
     
     if not config.get("archive_settings", {}).get("enabled", False):
         print("⚠️  Archive is disabled in config")

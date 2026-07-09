@@ -194,7 +194,14 @@ LLM 本身就擅長理解小型程式碼的關聯性。直接進入 Phase 4。
 
 **3.1 安裝 codebase-memory-mcp:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash
+# Prefer package-manager installs that perform checksum/provenance checks.
+npm install -g codebase-memory-mcp
+# Alternative:
+pip install codebase-memory-mcp
+
+# For manually downloaded release binaries, verify before running:
+gh attestation verify <downloaded-file> --repo DeusData/codebase-memory-mcp
+cosign verify-blob --bundle <file>.bundle <file>
 ```
 
 **3.2 索引所有 repos:**
@@ -259,7 +266,7 @@ mkdir -p \
   "$PATH/graphify" \
   "$PATH/wiki/entities" \
   "$PATH/wiki/concepts" \
-  "$PATH/patterns" \
+  "$PATH/wiki/patterns" \
   "$PATH/wiki/comparisons" \
   "$PATH/spec"
 
@@ -333,7 +340,6 @@ Read `graphify/<repo>/GRAPH_REPORT.md` + `graph.json`:
 
 ```
 wiki/
-  raw/           # Evidence mirror — keep synchronized with /raw
   entities/      # ONE entity per page — services, modules, external deps
   concepts/      # ONE decision per page — why X, alternatives considered, tradeoffs
   patterns/      # Runtime experience — known issues, debug clues, workarounds
@@ -364,6 +370,9 @@ tags: [string]
 status: active | superseded | archived | draft | deprecated  # all types have lifecycle
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
+valid_from: YYYY-MM-DD
+invalidated_at: YYYY-MM-DD
+invalidated_by: string
 ```
 
 **Content sections** (by type):
@@ -379,6 +388,7 @@ updated: YYYY-MM-DD
 - `superseded` — 被新版本取代，但保留參考
 - `archived` — 過時但有歷史價值
 - `deprecated` — 不再建議使用
+- Recall rule: pages with `status: superseded` or `status: deprecated` MUST NOT be loaded into normal task context unless the task explicitly asks for history, audit, or migration background.
 
 ## Step 6 - Generate spec/ (OpenSpec — How 施工藍圖 / contract)
 

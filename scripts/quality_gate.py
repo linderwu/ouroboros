@@ -14,29 +14,31 @@ import os
 import sys
 import json
 import yaml
-import jsonschema
 from pathlib import Path
 from typing import List, Tuple
 
-# === Config ===
-import os
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+# === Config ===
 SKILL_DIR = Path(__file__).parent.parent
 # Allow override via environment variable
-WIKI_DIR = Path(os.environ.get("OUROBOROS_WIKI_DIR", SKILL_DIR.parent.parent / "wiki"))
+WORKSPACE_DIR = Path(os.environ.get("OUROBOROS_WORKSPACE_DIR", SKILL_DIR.parent.parent))
+WIKI_DIR = Path(os.environ.get("OUROBOROS_WIKI_DIR", WORKSPACE_DIR / "wiki"))
 SCHEMA_FILE = SKILL_DIR / "references" / "frontmatter_schema.json"
-STALNESS_FILE = SKILL_DIR / "references" / "staleness_rules.yaml"
+STALENESS_FILE = SKILL_DIR / "references" / "staleness_rules.yaml"
 
 # === Load Schema ===
 def load_schema() -> dict:
     if SCHEMA_FILE.exists():
-        with open(SCHEMA_FILE) as f:
+        with open(SCHEMA_FILE, encoding="utf-8") as f:
             return json.load(f)
     return {}
 
-def load_stalness_rules() -> dict:
-    if STALNESS_FILE.exists():
-        with open(STALNESS_FILE) as f:
+def load_staleness_rules() -> dict:
+    if STALENESS_FILE.exists():
+        with open(STALENESS_FILE, encoding="utf-8") as f:
             return yaml.safe_load(f)
     return {}
 
@@ -45,7 +47,7 @@ def validate_frontmatter(page_path: Path, schema: dict) -> Tuple[bool, List[str]
     """驗證 frontmatter 是否符合 schema"""
     errors = []
     
-    content = page_path.read_text(errors="ignore")
+    content = page_path.read_text(encoding="utf-8", errors="ignore").lstrip("\ufeff")
     
     if not content.startswith("---"):
         return True, []  # No frontmatter is ok for some pages
@@ -85,7 +87,7 @@ def validate_frontmatter(page_path: Path, schema: dict) -> Tuple[bool, List[str]
 
 def check_content_length(page_path: Path, max_chars: int = 5000) -> Tuple[bool, str]:
     """檢查內容長度"""
-    content = page_path.read_text(errors="ignore")
+    content = page_path.read_text(encoding="utf-8", errors="ignore").lstrip("\ufeff")
     
     # 去除 frontmatter
     if content.startswith("---"):
@@ -102,7 +104,7 @@ def check_content_length(page_path: Path, max_chars: int = 5000) -> Tuple[bool, 
 
 def check_duplicate_titles(page_path: Path, all_titles: dict) -> Tuple[bool, str]:
     """檢查標題是否重複"""
-    content = page_path.read_text(errors="ignore")
+    content = page_path.read_text(encoding="utf-8", errors="ignore").lstrip("\ufeff")
     
     # 取得標題
     title = None
@@ -131,7 +133,7 @@ def check_broken_wikilinks(page_path: Path, all_files: set) -> Tuple[bool, List[
     WIKILINK_PATTERN = re.compile(r'\[\[([^\]|]+)(?:\|[^\]]+)?\]\]')
     
     errors = []
-    content = page_path.read_text(errors="ignore")
+    content = page_path.read_text(encoding="utf-8", errors="ignore").lstrip("\ufeff")
     links = WIKILINK_PATTERN.findall(content)
     
     for link in links:
@@ -144,15 +146,19 @@ def check_broken_wikilinks(page_path: Path, all_files: set) -> Tuple[bool, List[
         if not link:
             continue
         
-        # 嘗試解析
+        # 嘗試解析。wiki 內部連結查 all_files；raw/repos/spec/graphify
+        # 連結則以 workspace root 為基準，避免把合法 evidence links 判成斷鏈。
         link_path = Path(link.replace(".", "/"))
-        
-        found = False
-        for ext in [".md", ""]:
-            candidate = link_path.name + ext
-            if candidate in all_files or str(link_path) in all_files:
-                found = True
-                break
+
+        if link_path.parts and link_path.parts[0] in {"raw", "repos", "spec", "graphify"}:
+            found = any((WORKSPACE_DIR / f"{link_path}{ext}").exists() for ext in [".md", ""])
+        else:
+            found = False
+            for ext in [".md", ""]:
+                candidate = link_path.name + ext
+                if candidate in all_files or str(link_path) in all_files:
+                    found = True
+                    break
         
         if not found:
             errors.append(f"Broken wikilink: [[{link}]]")
@@ -163,7 +169,7 @@ def check_broken_wikilinks(page_path: Path, all_files: set) -> Tuple[bool, List[
 def run_quality_gate(dry_run: bool = True) -> dict:
     """執行品質關卡"""
     schema = load_schema()
-    stalness_rules = load_stalness_rules()
+    staleness_rules = load_staleness_rules()
     
     results = {
         "pages_checked": 0,
@@ -231,6 +237,8 @@ def main():
     args = parser.parse_args()
     
     print("🔍 Running Ouroboros Quality Gate...")
+    print(f"Workspace: {WORKSPACE_DIR}")
+    print(f"Wiki: {WIKI_DIR}")
     print()
     
     results = run_quality_gate()

@@ -14,9 +14,14 @@ from pathlib import Path
 from typing import Set, List, Tuple
 from datetime import datetime
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # === Config ===
 SKILL_DIR = Path(__file__).parent.parent
-WIKI_DIR = SKILL_DIR.parent.parent / "wiki"
+WORKSPACE_DIR = Path(os.environ.get("OUROBOROS_WORKSPACE_DIR", SKILL_DIR.parent.parent))
+WIKI_DIR = Path(os.environ.get("OUROBOROS_WIKI_DIR", WORKSPACE_DIR / "wiki"))
 LOG_FILE = SKILL_DIR / ".ouroboros" / "wikilinks_integrity.log"
 
 # === Extract Wikilinks ===
@@ -26,12 +31,15 @@ def extract_wikilinks(content: str) -> List[str]:
     """從內容中提取所有 wikilink"""
     return WIKILINK_PATTERN.findall(content)
 
-def resolve_wikilink(link: str, wiki_dir: Path) -> Path:
+def resolve_wikilink(link: str, wiki_dir: Path, workspace_dir: Path = WORKSPACE_DIR) -> Path:
     """
     解析 wikilink 到實際檔案路徑。
     支援：
     - [[page]] -> wiki/page.md
     - [[category/page]] -> wiki/category/page.md
+    - [[raw/evidence]] -> raw/evidence.md
+    - [[repos/repo/path]] -> repos/repo/path
+    - [[spec/module/SPEC]] -> spec/module/SPEC.md
     - [[page|display]] -> wiki/page.md
     """
     # 清理 link
@@ -50,13 +58,22 @@ def resolve_wikilink(link: str, wiki_dir: Path) -> Path:
     
     link_path = Path(link.replace(".", "/"))  # a.b.c -> a/b/c
     
+    link_parts = link_path.parts
+    if link_parts and link_parts[0] in {"raw", "repos", "spec", "graphify"}:
+        root = workspace_dir
+    else:
+        root = wiki_dir
+
     # 嘗試可能的擴展名
-    for ext in [".md", ".md"]:
+    for ext in [".md", ""]:
         # 直接在對應目錄
-        candidate = wiki_dir / f"{link_path}{ext}"
+        candidate = root / f"{link_path}{ext}"
         if candidate.exists():
             return candidate
-        
+
+        if root != wiki_dir:
+            continue
+
         # 在根目錄搜尋（標題可能在任意位置）
         for md_file in wiki_dir.rglob(f"{link_path.name}{ext}"):
             return md_file
@@ -81,7 +98,7 @@ def scan_wikilinks(wiki_dir: Path) -> dict:
         all_files.add(str(relative.with_suffix("")).replace("\\", "/"))
         
         # 提取 wikilinks
-        content = md_file.read_text(errors="ignore")
+        content = md_file.read_text(encoding="utf-8", errors="ignore")
         links = extract_wikilinks(content)
         
         for link in links:
@@ -157,7 +174,7 @@ def log_results(results: dict):
         "broken_links": results["broken_links"]
     }
     
-    with open(LOG_FILE, "a") as f:
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
 
 # === CLI ===
@@ -170,6 +187,8 @@ def main():
     args = parser.parse_args()
     
     print("🔍 Scanning wikilinks integrity...")
+    print(f"Workspace: {WORKSPACE_DIR}")
+    print(f"Wiki: {WIKI_DIR}")
     print()
     
     results = scan_wikilinks(WIKI_DIR)

@@ -7,14 +7,19 @@ Phase 6: Working Memory Integration
 """
 
 import os
+import sys
 import json
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # === Config ===
 SKILL_DIR = Path(__file__).parent.parent
-WORKSPACE_DIR = SKILL_DIR.parent.parent
+WORKSPACE_DIR = Path(os.environ.get("OUROBOROS_WORKSPACE_DIR", SKILL_DIR.parent.parent))
 PROGRESS_DIR = WORKSPACE_DIR / ".ouroboros"
 PROGRESS_FILE = PROGRESS_DIR / "progress.json"
 AUDIT_FILE = PROGRESS_DIR / "audit_log.jsonl"
@@ -31,7 +36,7 @@ class ProgressTracker:
         """初始化追蹤檔"""
         if not self.progress_file.exists():
             self._write({
-                "version": "2.7",
+                "version": "2.8",
                 "phases": {},
                 "decisions": [],
                 "current_phase": None,
@@ -41,12 +46,12 @@ class ProgressTracker:
     def _read(self) -> dict:
         """讀取進度"""
         if self.progress_file.exists():
-            return json.loads(self.progress_file.read_text())
+            return json.loads(self.progress_file.read_text(encoding="utf-8"))
         return {}
     
     def _write(self, data: dict):
         """寫入進度"""
-        self.progress_file.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+        self.progress_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     
     def start_phase(self, phase: str):
         """標記 Phase 開始"""
@@ -167,7 +172,7 @@ class ProgressTracker:
             **data
         }
         
-        with open(AUDIT_FILE, "a") as f:
+        with open(AUDIT_FILE, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     
     def get_audit_log(self, limit: int = 50) -> List[dict]:
@@ -176,7 +181,7 @@ class ProgressTracker:
             return []
         
         entries = []
-        with open(AUDIT_FILE) as f:
+        with open(AUDIT_FILE, encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     entries.append(json.loads(line))

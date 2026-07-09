@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Ouroboros Wiki Page Frontmatter Schema",
-  "description": "Frontmatter schema for Ouroboros wiki pages (entities, concepts, patterns, comparisons, procedures)",
+  "description": "Frontmatter schema for Ouroboros wiki and raw evidence pages",
   "type": "object",
   "required": ["title", "type", "updated"],
   "properties": {
@@ -11,7 +11,7 @@
     },
     "type": {
       "type": "string",
-      "enum": ["entity", "concept", "pattern", "comparison", "procedure"],
+      "enum": ["entity", "concept", "pattern", "comparison", "procedure", "raw"],
       "description": "Page type — determines content structure and lifecycle rules"
     },
     "tags": {
@@ -60,6 +60,38 @@
       "type": "array",
       "items": {"type": "string"},
       "description": "Related page names (wikilinks without brackets)"
+    },
+    "source": {
+      "type": "string",
+      "description": "Evidence source category or URL"
+    },
+    "ingested_by": {
+      "type": "string",
+      "description": "Person or agent that ingested this evidence"
+    },
+    "trust": {
+      "type": "string",
+      "enum": ["verified", "unverified", "trusted", "low"],
+      "description": "Trust level for raw evidence"
+    },
+    "sanitized": {
+      "type": "string",
+      "enum": ["yes", "no"],
+      "description": "Whether prompt-injection or unsafe instructions were sanitized before curation"
+    },
+    "valid_from": {
+      "type": "string",
+      "format": "date",
+      "description": "When this knowledge became valid in the real world"
+    },
+    "invalidated_at": {
+      "type": "string",
+      "format": "date",
+      "description": "When this knowledge stopped being valid in the real world"
+    },
+    "invalidated_by": {
+      "type": "string",
+      "description": "Page or evidence that invalidated this item"
     }
   }
 }

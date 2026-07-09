@@ -13,9 +13,13 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # === Config ===
 SKILL_DIR = Path(__file__).parent.parent
-WORKSPACE_DIR = SKILL_DIR.parent.parent
+WORKSPACE_DIR = Path(os.environ.get("OUROBOROS_WORKSPACE_DIR", SKILL_DIR.parent.parent))
 MEMORY_DIR = WORKSPACE_DIR / "memory"
 
 # === Session Memory Management ===
@@ -33,7 +37,7 @@ class SessionMemory:
         """確保今日檔案存在"""
         today_file = self._today_file()
         if not today_file.exists():
-            today_file.write_text(f"# {datetime.now().strftime('%Y-%m-%d')}\n\n")
+            today_file.write_text(f"# {datetime.now().strftime('%Y-%m-%d')}\n\n", encoding="utf-8")
         return today_file
     
     def append_entry(self, entry: str, category: str = "General"):
@@ -43,7 +47,7 @@ class SessionMemory:
         timestamp = datetime.now().strftime("%H:%M")
         content = f"\n## [{timestamp}] {category}\n\n{entry}\n"
         
-        with open(today_file, "a") as f:
+        with open(today_file, "a", encoding="utf-8") as f:
             f.write(content)
     
     def record_phase_completion(self, phase: str, results: dict):
@@ -79,7 +83,7 @@ class SessionMemory:
         """取得今日摘要"""
         today_file = self._today_file()
         if today_file.exists():
-            return today_file.read_text()
+            return today_file.read_text(encoding="utf-8")
         return ""
 
 # === CLI ===

@@ -11,13 +11,19 @@ import sys
 import json
 import yaml
 import hashlib
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Tuple
 from difflib import SequenceMatcher
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # === Config ===
 SKILL_DIR = Path(__file__).parent.parent
-WIKI_DIR = SKILL_DIR.parent.parent / "wiki"
+WORKSPACE_DIR = Path(os.environ.get("OUROBOROS_WORKSPACE_DIR", SKILL_DIR.parent.parent))
+WIKI_DIR = Path(os.environ.get("OUROBOROS_WIKI_DIR", WORKSPACE_DIR / "wiki"))
 SIMILARITY_THRESHOLD = 0.85  # 超過這個相似度視為重複
 LOG_FILE = SKILL_DIR / ".ouroboros" / "deduplication.log"
 
@@ -58,7 +64,7 @@ def title_similarity(title1: str, title2: str) -> float:
 # === Extract Page Info ===
 def extract_page_info(page_path: Path) -> dict:
     """從 wiki 頁面提取資訊"""
-    content = page_path.read_text(errors="ignore")
+    content = page_path.read_text(encoding="utf-8", errors="ignore").lstrip("\ufeff")
     
     # 預設值
     info = {
@@ -128,8 +134,8 @@ def find_duplicates(wiki_dir: Path, threshold: float = SIMILARITY_THRESHOLD) -> 
             # 如果類型相同且標題部分相似，進一步檢查內容
             if page1["type"] == page2["type"] and title_sim > 0.5:
                 # 讀取內容進行比較
-                content1 = Path(page1["path"]).read_text(errors="ignore")
-                content2 = Path(page2["path"]).read_text(errors="ignore")
+                content1 = Path(page1["path"]).read_text(encoding="utf-8", errors="ignore").lstrip("\ufeff")
+                content2 = Path(page2["path"]).read_text(encoding="utf-8", errors="ignore").lstrip("\ufeff")
                 
                 # 去除 frontmatter
                 if content1.startswith("---"):
@@ -168,13 +174,12 @@ def log_duplicates(duplicates: List[dict]):
         "duplicates": duplicates
     }
     
-    with open(LOG_FILE, "a") as f:
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 # === CLI ===
 def main():
     import argparse
-    from datetime import datetime
     
     parser = argparse.ArgumentParser(description="Ouroboros Deduplication Hook")
     parser.add_argument("--threshold", type=float, default=SIMILARITY_THRESHOLD,
@@ -184,6 +189,7 @@ def main():
     args = parser.parse_args()
     
     print(f"🔍 Scanning for duplicates in {WIKI_DIR}")
+    print(f"   Workspace: {WORKSPACE_DIR}")
     print(f"   Threshold: {args.threshold}")
     print()
     

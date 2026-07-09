@@ -5,6 +5,9 @@ tags: [architecture, database, auth, performance, ...]
 status: active | superseded | deprecated
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
+valid_from: YYYY-MM-DD
+invalidated_at: [YYYY-MM-DD or null]
+invalidated_by: [concept-or-raw-evidence or null]
 ---
 
 # [Decision Name]
@@ -35,6 +38,9 @@ What was chosen?
 
 ## Superseded By
 (If status: superseded) Link to the new decision.
+
+## Validity Window
+When did this decision become true for the project, and what evidence or later decision invalidated it?
 
 ## References
 - [[raw/evidence-file]] — supporting evidence (cite `raw/` directly, never `wiki/raw/`)
