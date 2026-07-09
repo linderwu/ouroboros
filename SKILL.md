@@ -3,7 +3,7 @@ name: ouroboros
 description: "Ouroboros — Transform project repo(s) into Trivium-aligned multi-repo structure: raw/ (evidence), repos/ (code), graphify/ (bridge), wiki/ (decisions + procedural architecture), spec/ (blueprint)"
 ---
 
-# Ouroboros (Trivium v2.5)
+# Ouroboros (Trivium v2.8)
 
 Transform any project (single repo or multi-repo workspace) into a Trivium-aligned knowledge structure. Named for the snake that consumes itself to be reborn — every codebase becomes its own auditable knowledge graph.
 
