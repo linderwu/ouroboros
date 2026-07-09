@@ -1,704 +1,79 @@
 ---
 name: ouroboros
-description: "Ouroboros — Transform project repo(s) into Trivium-aligned multi-repo structure: raw/ (evidence), repos/ (code), graphify/ (bridge), wiki/ (decisions + procedural architecture), spec/ (blueprint)"
+description: 把單一 repo 消化成四層知識庫（raw 證據/graphify 依賴圖/wiki 決策/spec 模組契約）的萃取管線。觸發：接手陌生 codebase、要建可審計的專案知識庫、或 agent 反覆重讀同一批程式碼在浪費 context 時。小專案（<5 檔）不觸發——LLM 直讀即可。
+status: experimental
+source: roaringmoon（github.com/linderwu/ouroboros，Trivium v2.7 原作）；引入改寫 2026-07-09，待首個 MEDIUM 規模試點回填實戰
 ---
 
-# Ouroboros (Trivium v2.8)
+> **血統**：本 skill 移植自外部作品 ouroboros（roaringmoon 著，Trivium v2.7）。基準版本 v2.7，含 execution modes 與擴展型別系統。
+> **改寫範圍一句話**：結構重組＋強制力腳本化＋去重指回；管線機制本身未改。四層定位、size-gating、單一證據層、Question Routing、append-only/supersede 全數沿原作精神。改寫逐項對照見 `references/00-readme.md`。
+> **experimental 待驗證什麼**：入籍後尚未在任一 MEDIUM 規模（5–20 檔）真實專案跑完整流程回填；hooks 強制力已附測試但未接真實 CI。首戰後回報效果再轉 stable。
 
-Transform any project (single repo or multi-repo workspace) into a Trivium-aligned knowledge structure. Named for the snake that consumes itself to be reborn — every codebase becomes its own auditable knowledge graph.
+## 何時使用
 
-## Trivium-aligned structure
+先做規模前置判斷——這是觸發判斷的一部分，不是進來後才做：
 
-```
-workspace/
-  raw/            # Evidence Layer (Grammar / What) — immutable, append-only
-                   #   PM specs, meeting notes, discussion records, external refs
-                   #   NOT code. Pure inputs and references.
-  repos/          # Code Layer — actual source repositories
-                   #   One or more code repos (single or multi-repo projects)
-                   #   What runs in production; where edits happen
-  graphify/       # Connection Bridge (Logic / How bridge)
-                   #   Function-level graph + cross-entity relations
-                   #   Bridges repos/ ↔ wiki/ ↔ spec/
-                   #   Bridges multi-repo relationships
-  wiki/           # Rhetoric Layer (Why + procedural architecture)
-                   #   Curated, PR-reviewed. NOT auto-generated.
-                   #   Wiki pages cite evidence via [[raw/YYYY-MM-DD-...]] wikilinks
-                   #   There is NO wiki/raw/ — raw/ is the single evidence source.
-    entities/     #   actors (services, modules, deps)
-    concepts/     #   design decisions, tradeoffs
-    patterns/     #   runtime experience, debug clues
-    comparisons/  #   option comparisons
-    index.md      #   entry point
-    SCHEMA.md     #   format spec
-  spec/           # OpenSpec (Logic / How construction blueprint)
-                   #   Per-module contracts, API schemas, data flow
-```
+| 規模 | 檔數（掃 `.py/.ts/.js/.cpp/.h/.java/.go/.rs`） | 動作 |
+|---|---|---|
+| S | <5 檔 | **不用本 skill**。LLM 直讀即懂，建知識庫是淨負擔 |
+| M | 5–20 檔 | 用本 skill，Phase 3 只對 hub 模組局部 graphify |
+| L | >20 檔 | 用本 skill，Phase 3 全套（graphify + 索引工具） |
 
-## Trivium Philosophy (updated)
+觸發情境：接手陌生 codebase 要建可審計知識庫、多個 agent／session 反覆重讀同一批 code 在燒 context、需要「決策為什麼這樣做」有據可查。
 
-| Layer          | Trivium    | Role                                        | Mutability         |
-|----------------|------------|---------------------------------------------|--------------------|
-| `raw/`         | Grammar    | **Sole** canonical evidence layer — original inputs (PM spec, meeting notes, external refs, logs) | Immutable, append-only |
-| `repos/`       | —          | Actual code (production source of truth)    | Mutable (via git) |
-| `graphify/`    | Logic      | Connection bridge — relations               | Read-only output    |
-| `wiki/`        | Rhetoric   | Decisions + procedural architecture + links | Curated via PR      |
-| `spec/`        | Logic      | Construction blueprint / contract           | Mutable (via PR)    |
+## 1. 四層定位
 
-**Canonical evidence rule**: `raw/` is the **single canonical evidence layer** in the system.
-There is **no `wiki/raw/`**. Wiki pages that need to cite evidence use `[[raw/YYYY-MM-DD-source-type]]` wikilinks directly. There is exactly one place where evidence lives, exactly one place where it can be appended, and exactly one place where it can be read as the source of truth.
+單一 repo 消化成四個知識層（各層職責單一、不重疊）：
 
-**Key shifts from prior version:**
-- `raw/` is now **evidence layer**, not code. Real code lives in `repos/`.
-- `wiki/raw/` was previously a parallel evidence layer; this is **removed in v2.4.1** to eliminate double-truth confusion.
-- `wiki/` now also captures **procedural architecture** (how modules relate, call graph narratives, runbook-level descriptions) via wikilinks — but wiki is still not the source of truth for code or evidence.
-- `graphify/` is explicitly the **connection bridge** — it links wiki entries, code, and specs across repos.
-- `repos/` supports **multiple repositories** (frontend / backend / shared-types / etc).
+- **raw/**（Grammar）：唯一證據層。PM spec、會議記錄、外部參考——**append-only，immutable**。非 code。系統裡證據只存在這一處。
+- **graphify/**（Logic）：依賴圖。function-level call graph，**由工具生成**、非人工維護；code 一變就重跑再生成。
+- **wiki/**（Rhetoric）：決策與程序架構。entity/concept/pattern/comparison 四型頁面，**curated、走 PR**、非自動生成；用 `[[raw/...]]` wikilink 回引證據。
+- **spec/**（Logic）：模組現況契約。從 code 萃取的 per-module 介面/資料流契約（與「人寫的需求 SPEC」分工，見 references/05）。
 
-## Question Routing
+（`repos/` 是編輯發生地、production source of truth，**不是知識層**，不對應上表。）
 
-| You ask                              | Look in                                  |
-|--------------------------------------|------------------------------------------|
-| 為什麼這樣設計 / 當初決策是什麼       | `wiki/concepts/`                         |
-| 這個 module 跟誰連動 / call graph     | `graphify/` + Graphify MCP (`find_dependents`) |
-| API schema / 介面契約                | `spec/` (OpenSpec)                       |
-| 程式碼在哪 / 怎麼改                  | `repos/<repo>/`                          |
-| 證據來源 / 會議紀錄 / 外部參考       | `raw/`（唯一 evidence layer）            |
-| 程序架構 / 模組關係 / 運作脈絡        | `wiki/` + `graphify/`                    |
-| 改了會影響誰                          | `graphify/` MCP (`find_dependents`)      |
-| 這是 bug 還是故意的                  | `graphify/` → `spec/` → `wiki/` (strict order) |
-| 跨 repo 關係                          | `graphify-out/` (merged) + 各自 `graphify/` |
-| 當初為什麼這樣寫                      | `wiki/` search                           |
+## 2. 六 Phase 骨架
 
-## Workflow: Why → How → What → Update reverse
+預設 **iterative** 模式（非強制單向；v2.7 另有 incremental mode，踩到再展開）。各 phase 細節下放 references：
 
-1. **Wiki** (cross-repo constraints, prior decisions)
-2. **Graphify** (impact scope, dependency surface)
-3. **OpenSpec** (existing contracts, schemas)
-4. **Update**: OpenSpec → Code → Graphify → Wiki (cross-repo decisions only)
+| Phase | 名稱 | 一句話 | 細節 |
+|---|---|---|---|
+| 0 | 規模評估 | 數檔決定 S/M/L，定後續工具用不用 | references/01 |
+| 1 | 證據保全 | 證據入 raw/，`YYYY-MM-DD-source-type.md`，append-only | references/02 |
+| 2 | 程式碼盤點 | 原始碼放 repos/`<repo>`/，這是改 code 的地方 | references/02 |
+| 3 | 依賴圖 | 依規模條件式跑 graphify（S 跳過/M 局部/L 全套） | references/03 |
+| 4 | 知識策展 | 起草 wiki 四型頁 + spec 契約，開 PR | references/04、05 |
+| 5 | 稽核維護 | 驗 raw/ 未被改、code 變更重跑 graphify、wiki 一律走 PR | references/00 |
 
-## Debugging: How → What → Why
+## 3. Question Routing
 
-1. **Graphify** query (locate the affected module across repos)
-2. **OpenSpec** (compare spec vs reality)
-3. **Wiki** search (reason attribution)
+問什麼→查哪層（本 skill 獨有價值：不靠語義檢索，靠規則路由）：
 
-## Execution Modes
+| 你問什麼 | 去哪找 |
+|---|---|
+| 為什麼這樣設計／當初決策 | `wiki/concepts/` |
+| 這模組跟誰連動／call graph／改了影響誰 | `graphify/` |
+| API schema／介面契約 | `spec/` |
+| 程式碼在哪／怎麼改 | `repos/<repo>/` |
+| 證據來源／會議記錄／外部參考 | `raw/`（唯一證據層） |
+| 程序架構／模組關係／運作脈絡 | `wiki/` + `graphify/` |
+| 這是 bug 還是故意的 | `graphify/` → `spec/` → `wiki/`（依序） |
 
-Ouroboros 支援三種執行模式：
+## 4. 鐵律
 
-| 模式 | 適用 | 順序嚴格度 |
-|------|------|-----------|
-| **waterfall** | 大型專案（>20 檔案） | 嚴格 |
-| **iterative** | 中小型專案（default） | 靈活 |
-| **incremental** | 現有專案添加 wiki | 自由 entry point |
+1. **raw/ 不可變**：append-only；既有證據檔不改、不覆寫、不刪。要取代舊證據＝新增檔（`YYYY-MM-DD-superseded.md`），不動舊檔。
+2. **單一證據層**：全系統只有一處 raw/；無 `wiki/raw/`、無任何平行證據目錄。證據能被追加、被讀為真相，都只在這一處。
+3. **wiki 頁入庫走 PR＋否證關**：起草 agent 不得自審；每條 concept 主張交獨立 agent 反駁，推不翻才 merge。過「存在性＋來源性」兩層核驗（見 references/04）。
+4. **superseded 頁不進日常檢索**：標記 `status: superseded` 的頁保留歷史，但不列入日常召回。
+5. **強制力在 hooks 的 exit-code，不在本文字**：斷鏈與過時偵測靠 `hooks/` 的檢查器（非 0 exit 才擋），文字只是規範。
 
-**使用方式：**
-```bash
-export OUROBOROS_MODE=iterative  # waterfall | iterative | incremental
-```
+## 5. 指回清單
 
-**在 iterative 模式下，允許任意 Phase 之間來回跳轉。**
+以下能力由姊妹 skill 承擔，本 skill **只遵其慣例、不重寫其機制**（介面一句話）：
 
-## Phase Execution Order
+- **熵管理／保鮮標籤格式**：遵索引式 memory skill 慣例（`<!-- updated -->` / `<!-- staleness -->` 標籤語意由該 skill 定義）。
+- **需求 SPEC 生產與 gate**：遵 spec 生產鏈 skill；本 skill 不產不審需求 SPEC，只萃取 code 現況契約。
+- **wiki 主張否證**：遵對抗式 QE skill 的否證關（起草者≠審查者、finding 過否證才計分）。
+- **spec 對外行為白名單供給**：遵黑箱測試 skill 的白名單/黑名單邊界（visibility: external 供其機械抽取）。
 
-### Phase 0 — Size Assessment
-
-**核心原則：LLM 本身就擅長理解小型程式碼的關聯性。工具是「增強」而非「取代」。**
-
-0.1 Accept target path (or workspace root for multi-repo)
-0.2 Identify scope: single repo vs multi-repo
-0.3 Inventory existing evidence in `raw/` — DO NOT mutate (single canonical evidence layer)
-0.4 **評估專案大小** — 決定使用哪些工具
-
-```bash
-# 計算重要程式碼檔案數量
-FILE_COUNT=$(find "$PATH/repos" -type f \
-  \( -name "*.py" -o -name "*.ts" -o -name "*.js" \
-     -o -name "*.cpp" -o -name "*.h" -o -name "*.java" \
-     -o -name "*.go" -o -name "*.rs" \
-  \) 2>/dev/null | wc -l)
-
-if [ "$FILE_COUNT" -lt 5 ]; then
-  echo "size: SMALL"
-  echo "tools: wiki_only"
-elif [ "$FILE_COUNT" -lt 20 ]; then
-  echo "size: MEDIUM"
-  echo "tools: graphify_key_modules"
-else
-  echo "size: LARGE"
-  echo "tools: codebase_memory_mcp_plus_graphify"
-fi
-```
-
-### Size-Based Tool Selection
-
-| 等級 | 標準 | 工具策略 | 理由 |
-|------|------|---------|------|
-| **S** | < 5 檔案 | LLM 自己理解 + wiki | 工具啟動成本 > LLM 自己理解的成本 |
-| **M** | 5-20 檔案 | graphify 關鍵模組 | 局部關聯已足夠，不需要全域圖 |
-| **L** | > 20 檔案 | codebase-memory-mcp + graphify | 超出 LLM 上下文，需要工具輔助 |
-
-**Tool Selection Matrix:**
-
-| 大小 | wiki | graphify | codebase-memory-mcp | spec |
-|------|------|----------|---------------------|------|
-| S    | ✅    | ❌       | ❌                  | ⚠️   |
-| M    | ✅    | ⚠️關鍵模組 | ❌                  | ✅    |
-| L    | ✅    | ✅       | ✅                  | ✅    |
-
-### Phase 1 — Evidence Preservation (raw/ as Evidence Layer)
-
-1.1 Create `raw/` directory structure
-1.2 Collect ALL evidence (NOT code) into `raw/`:
-   - PM specs and requirements docs
-   - Meeting notes, discussion records
-   - External reference materials (URLs, papers, vendor docs)
-   - Raw data dumps, test results, logs snapshots
-   - Imported evidence from prior projects
-1.3 **Append-only rule**: never overwrite, never rewrite, never delete.
-   New evidence → new file with `YYYY-MM-DD-source-type.md` naming.
-
-### Phase 2 — Code Inventory (repos/ as Code Layer)
-
-2.1 Create `repos/<repo-name>/` for each code repository
-2.2 Place actual source code here. This is where edits happen.
-2.3 `repos/` is the source of truth for code. Git-tracked.
-2.4 For multi-repo projects: each repo gets its own subdirectory.
-   Shared libraries / types go in their own `repos/<shared>`.
-
-### Phase 3 — Connection Bridge (graphify/ as How Layer)
-
-**根據 Phase 0.4 評估結果，選擇性執行：**
-
-#### SMALL: 跳過 graphify/mcp
-LLM 本身就擅長理解小型程式碼的關聯性。直接進入 Phase 4。
-理由：工具的啟動成本 > LLM 自己理解的成本
-
-#### MEDIUM: graphify 關鍵模組
-只對以下模組執行 graphify：
-- 被多個模組依賴的（hub functions）
-- 跨 repo 的介面
-- 外部依賴密集的模組
-理由：不需要全域圖，局部關聯已足夠
-
-3.1 Install graphify: `uv tool install graphifyy`
-3.2 For **關鍵模組** in `repos/`, run:
-   ```
-   cd repos/<repo-name> && graphify . --output-dir ../../graphify/<repo-name>/ --mode deep
-   ```
-3.3 Agent reads `graphify/GRAPH_REPORT.md` + `graph.json` for key modules only
-3.4 Proposes wiki entity/concept/pattern candidates
-
-#### LARGE: codebase-memory-mcp + 完整 graphify
-
-**3.1 安裝 codebase-memory-mcp:**
-```bash
-# Prefer package-manager installs that perform checksum/provenance checks.
-npm install -g codebase-memory-mcp
-# Alternative:
-pip install codebase-memory-mcp
-
-# For manually downloaded release binaries, verify before running:
-gh attestation verify <downloaded-file> --repo DeusData/codebase-memory-mcp
-cosign verify-blob --bundle <file>.bundle <file>
-```
-
-**3.2 索引所有 repos:**
-```bash
-codebase-memory-mcp index_repository --repo-path "$PATH/repos/repo-a"
-codebase-memory-mcp index_repository --repo-path "$PATH/repos/repo-b"
-# ... all repos
-```
-
-**3.3 graphify cross-repo merge:**
-```bash
-graphify merge "$PATH/graphify/" --output "$PATH/graphify-out/" --mode deep
-```
-
-**3.4 Agent reads codebase-memory-mcp graph + graphify output:**
-- `codebase-memory-mcp get_architecture` — 程式碼概覽
-- `codebase-memory-mcp trace_path` — 關鍵函數的 call chain
-- `codebase-memory-mcp query_graph` — Cypher 查詢
-- `graphify/GRAPH_REPORT.md` — cross-repo 關係
-
-**3.5 Proposes wiki entity/concept/pattern candidates**
-
-**注意：** 對於小/中專案，跳過此階段直接進入 Phase 4。
-
-### Phase 4 — Knowledge Curation (wiki/ + spec/)
-
-4.1 Draft `wiki/entities/` — one page per actor (service, module, external dep)
-4.2 Draft `wiki/concepts/` — one page per design decision
-4.3 Draft `wiki/patterns/` — runtime experience, debug clues
-4.4 Draft `wiki/comparisons/` — A vs B tradeoffs
-4.5 Use wikilinks to express **procedural architecture**:
-   - Module flow: `[[entity-a]] → [[entity-b]] → [[entity-c]]`
-   - Runbook: `[[pattern-x]] when [[symptom-y]]; see [[entity-z]]`
-   - Cross-repo: `[[repos/frontend/entity]] interacts with [[repos/backend/entity]]`
-4.6 Generate `spec/<module>/SPEC.md` (OpenSpec per module)
-4.7 Create `wiki/index.md` + `wiki/SCHEMA.md`
-4.8 **Open Git PR** for review. NEVER auto-merge.
-
-### Phase 5 — Audit & Maintenance
-
-5.1 Verify `raw/` integrity (append-only, no mutations)
-5.2 Verify `repos/` matches production reality
-5.3 Re-run graphify when code changes
-5.4 Update wiki via PR, never direct push to main
-
----
-
-## Step 1 - Accept path
-
-```bash
-ls -la "$PATH" 2>/dev/null || echo "PATH_NOT_FOUND"
-```
-
-Stop if `PATH_NOT_FOUND`. For multi-repo, `$PATH` is the workspace root.
-
-## Step 2 - Create directory structure
-
-```bash
-mkdir -p \
-  "$PATH/raw" \
-  "$PATH/repos" \
-  "$PATH/graphify" \
-  "$PATH/wiki/entities" \
-  "$PATH/wiki/concepts" \
-  "$PATH/wiki/patterns" \
-  "$PATH/wiki/comparisons" \
-  "$PATH/spec"
-
-# Multi-repo: pre-create repo dirs if known
-mkdir -p "$PATH/repos/repo-a" "$PATH/repos/repo-b" "$PATH/repos/shared"
-```
-
-## Step 3 - Populate raw/ with evidence (NOT code)
-
-```bash
-# Copy PM specs, meeting notes, external refs into raw/
-# Naming: YYYY-MM-DD-source-type.md
-# Example:
-cp ~/specs/2026-06-pm-spec.md "$PATH/raw/2026-06-22-pm-spec.md"
-cp ~/meeting-notes/2026-06-21-team-sync.md "$PATH/raw/2026-06-21-team-sync.md"
-
-# raw/ rules:
-#  - immutable once written
-#  - no rewrites, no overwrites
-#  - new evidence → new file
-```
-
-## Step 3.5 - Populate repos/ with actual code
-
-```bash
-# Clone or copy real code repos into repos/
-git clone https://github.com/org/repo-a.git "$PATH/repos/repo-a"
-git clone https://github.com/org/repo-b.git "$PATH/repos/repo-b"
-git clone https://github.com/org/shared-types.git "$PATH/repos/shared"
-
-# OR copy existing local repo:
-cp -r /path/to/existing/code "$PATH/repos/repo-a"
-cd "$PATH/repos/repo-a" && git init && git add . && git commit -m "initial"
-
-# repos/ rules:
-#  - this is where code lives and is edited
-#  - git-tracked per repo
-#  - graphify reads from here, never writes here
-```
-
-## Step 4 - Run /graphify per repo (REQUIRED — How bridge)
-
-```bash
-# Per-repo graphify
-cd "$PATH/repos/repo-a"
-/graphify . --output-dir "$PATH/graphify/repo-a" --mode deep 2>&1 | tail -10
-
-cd "$PATH/repos/repo-b"
-/graphify . --output-dir "$PATH/graphify/repo-b" --mode deep 2>&1 | tail -10
-```
-
-**Must produce** per repo: `graph.json`, `graph.html`, `GRAPH_REPORT.md`
-
-For multi-repo, also build cross-repo merged graph:
-```bash
-# After per-repo graphs exist:
-graphify merge "$PATH/graphify/" --output "$PATH/graphify-out/" --mode deep
-```
-
-If graphify fails → stop and report error. Do not skip.
-
-## Step 4.5 - Agent reads graphify output
-
-Read `graphify/<repo>/GRAPH_REPORT.md` + `graph.json`:
-- Identify community clusters (functional blocks)
-- Identify hub functions (cross-module edges)
-- Identify cross-repo dependencies (from merged graph)
-- Propose candidate entities + concepts for wiki
-
-## Step 5 - Draft wiki/ content (Why + procedural architecture)
-
-```
-wiki/
-  entities/      # ONE entity per page — services, modules, external deps
-  concepts/      # ONE decision per page — why X, alternatives considered, tradeoffs
-  patterns/      # Runtime experience — known issues, debug clues, workarounds
-  comparisons/   # A vs B comparisons
-  index.md       # Entry point — list important pages by category
-  SCHEMA.md      # Format spec — frontmatter, wikilinks, page structure
-```
-
-**Wiki layer rules:**
-- `wiki/entities/`: `[entity-name].md`. Cite repos via `[[repos/repo-a/path/to/file]]`. Cite evidence via `[[raw/YYYY-MM-DD-source-type]]` (single canonical evidence layer — there is no `wiki/raw/`).
-- `wiki/concepts/`: `[decision-name].md`. Never delete — mark `status: superseded`.
-- `wiki/patterns/`: `[pattern-name].md`. Trigger: post-incident, post-mortem, perf observation.
-- `wiki/comparisons/`: `[topic-a]-vs-[topic-b].md`.
-- **All pages**: YAML frontmatter + `[[wikilinks]]` between related pages. Evidence citations use `[[raw/YYYY-MM-DD-source-type]]` — never `[[wiki/raw/...]]` (the latter does not exist).
-- **Procedural architecture** via wikilinks:
-  - Flow: `[[entity-a]] -> [[entity-b]] -> [[entity-c]]`
-  - Conditional: `{{if condition}} [[page-a]] {{else}} [[page-b]] {{endif}}`
-  - Concurrency: `{{concurrent}} [[task-1]] | [[task-2]] {{/concurrent}}`
-  - Loop: `{{repeat 3}} [[retry-task]] {{/repeat}}`
-  - Cross-repo: `[[repos/frontend/entity]] ↔ [[repos/backend/entity]]`
-- All pages: PR review before merge. NEVER auto-merge.
-
-**Frontmatter schema** (see `ouroboros/references/frontmatter_schema.json`):
-```yaml
-title: string
-type: entity | concept | pattern | comparison | procedure | raw
-tags: [string]
-status: active | superseded | archived | draft | deprecated  # all types have lifecycle
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-valid_from: YYYY-MM-DD
-invalidated_at: YYYY-MM-DD
-invalidated_by: string
-```
-
-**Content sections** (by type):
-- entity: Summary, Responsibility Boundaries, History, Known Issues, Related Decisions, References
-- concept: Summary, Context, Decision, Alternatives Considered, Consequences, References
-- pattern: Summary, Symptom, Root Cause, Workaround, Detection, Related, References
-- comparison: Summary, Dimensions, When to Choose A/B, Our Context, References
-- procedure: Summary, Prerequisite, Steps, Expected Result, Error Handling, Related
-- raw: Source, Date, Content (preserved as-is), Tags, Referenced By
-
-**Lifecycle rules**:
-- All types support `status: active | superseded | archived | draft | deprecated`
-- `superseded` — 被新版本取代，但保留參考
-- `archived` — 過時但有歷史價值
-- `deprecated` — 不再建議使用
-- Recall rule: pages with `status: superseded` or `status: deprecated` MUST NOT be loaded into normal task context unless the task explicitly asks for history, audit, or migration background.
-
-## Step 6 - Generate spec/ (OpenSpec — How 施工藍圖 / contract)
-
-```
-spec/
-  SPEC.md           # system overview
-  [module]/
-    SPEC.md         # per-module blueprint
-```
-
-```markdown
-# [Module Name]
-
-## Summary
-One-paragraph description.
-
-## Construction Blueprint
-- **Inputs**: ...
-- **Outputs**: ...
-- **Side effects**: ...
-- **API contract**: ...
-- **Source**: repos/<repo-name>/path/to/module
-
-## Interface
-```[language]
-[function signatures / API endpoints]
-```
-
-## Data Flow
-
-## Edge Cases
-- ...
-```
-
-**OpenSpec lives in repo, not wiki.** Hard Trivium boundary.
-**OpenSpec cites repos/ paths** — wiki may link to spec, but spec points to actual code in repos/.
-
-## Step 7 - Create index + SCHEMA
-
-```bash
-cat > "$PATH/wiki/index.md" << 'EOF'
-# Wiki Index
-
-## Entities
-EOF
-ls "$PATH/wiki/entities/" | grep '\.md$' | sed 's/\.md$//' >> "$PATH/wiki/index.md"
-
-cat >> "$PATH/wiki/index.md" << 'EOF'
-
-## Concepts
-EOF
-ls "$PATH/wiki/concepts/" | grep '\.md$' | sed 's/\.md$//' >> "$PATH/wiki/index.md"
-
-cat >> "$PATH/wiki/index.md" << 'EOF'
-
-## Patterns
-EOF
-ls "$PATH/wiki/patterns/" | grep '\.md$' | sed 's/\.md$//' >> "$PATH/wiki/index.md"
-
-cat >> "$PATH/wiki/index.md" << 'EOF'
-
-## Cross-Repo Modules
-EOF
-ls "$PATH/repos/" >> "$PATH/wiki/index.md"
-```
-
-## Step 8 - Open Git PR (REQUIRED)
-
-```bash
-cd "$PATH"
-git add .
-git commit -m "Draft Trivium-aligned wiki + spec + repos inventory"
-git checkout -b wiki/initial-curation
-git push -u origin wiki/initial-curation
-# Open PR via gh or GitHub UI
-```
-
-**Why Git PR**: human review gate preserves quality; git history = audit trail; design conflicts surface in PR review queue.
-
-## Output Summary
-
-```
-workspace/
-  raw/           — Evidence (append-only, NOT code) — single canonical evidence source
-  repos/         — Actual code (one or more repos)
-  graphify/      — Connection bridge (per-repo + cross-repo)
-  wiki/          — Why + procedural architecture (PR-reviewed); cites raw/ via wikilinks
-    entities/    —   services, modules, deps (cite repos paths)
-    concepts/    —   design decisions
-    patterns/    —   runtime experience
-    comparisons/ —  option comparisons
-    index.md
-    SCHEMA.md
-  spec/          — OpenSpec (How contract, per module — cites repos/)
-```
-
-## Read Workflow (Post-Merge)
-
-```
-RD Agent → Wiki Search (Why) + Graphify MCP (How) + repos/ (What via git)
-Chatbot RAG → Wiki Search Service (semantic, no summarization)
-End User → Chatbot RAG
-```
-
-## Multi-Repo Workspace
-
-```
-/opt/workspace/
-├── raw/               # shared evidence (cross-repo PM specs, meeting notes) — single source of truth
-├── repos/             # actual code, one dir per repo
-│   ├── frontend/
-│   ├── backend/
-│   ├── shared-types/
-│   └── infra/
-├── graphify/          # per-repo graphs
-│   ├── frontend/
-│   ├── backend/
-│   └── shared-types/
-├── graphify-out/      # merged cross-repo graph (NOT in any single repo)
-├── wiki/              # shared wiki (cross-repo concepts + patterns); cites raw/ via wikilinks
-│   ├── entities/      # entity pages cite repos paths
-│   ├── concepts/
-│   ├── patterns/
-│   └── comparisons/
-└── spec/              # per-repo + cross-repo OpenSpec
-```
-
-**Wiki entries should explicitly link across repos** when describing architecture:
-- `[[repos/frontend/src/auth]]` interacts with `[[repos/backend/src/auth-service]]`
-- Cross-repo decisions live in shared `wiki/concepts/`
-
-## Constraints
-
-- **Phase 3 (/graphify or codebase-memory-mcp) is MANDATORY for MEDIUM and LARGE — do not skip**
-- **For SMALL projects: skip Phase 3, LLM directly understands code relations**
-- **Wiki content MUST go through PR review — never auto-merge**
-- Do NOT modify `raw/` after creation (append-only; `raw/` is the single canonical evidence layer)
-- Do NOT create `wiki/raw/` or any parallel evidence layer — wiki pages must cite `raw/` directly via wikilinks
-- Do NOT put code in `raw/` — code belongs in `repos/`
-- `repos/<repo>/` is the only place to edit code
-- `wiki/concepts/`: never delete, mark superseded instead
-- OpenSpec lives in repo, not wiki (hard boundary). OpenSpec cites `repos/` paths.
-- Graphify output is read-only — never modify wiki from Graphify output, always via PR
-- Use Traditional Chinese for wiki unless source is clearly English
-
-## Versioning
-
-- v2.0: Initial Trivium 4-layer
-- v2.1: Wiki CURATED + wikilinks
-- v2.2: OpenSpec separation from wiki
-- v2.3: Git-native Knowledge Wiki + mandatory PR review
-- **v2.4: Evidence Layer (raw), Code Layer (repos), Connection Bridge (graphify), Procedural Architecture in wiki, multi-repo support**
-- **v2.4.1: Removed `wiki/raw/` entirely. `raw/` is the single canonical evidence source. Wiki pages cite `raw/` via `[[raw/...]]` wikilinks — no parallel evidence layer.**
-- **v2.5: Size-based tool selection — LLM擅長理解小型程式碼，工具增強大型專案。Phase 0 新增大小評估，Phase 3 條件化（SMALL跳過、M只能graphify、L標配codebase-memory-mcp）。**
-- **v2.6: Entropy Management + Enforcement Hooks — 新增熵管理、去重偵測、wikilinks完整性檢查、程式化CI鉤子。**
-- **v2.7: Design Adjustments — 新增 Execution Modes（iterative/waterfall/incremental）、擴展型別系統（procedure/deprecated/lifecycle）、流程表達增強（分支/並發/迴圈）。**
-- **v2.8: Working Memory Integration — 新增三層記憶架構（Knowledge Base / Session Memory / Working Memory）、Progress Tracker、Audit Log。**
-
----
-
-## Phase 1.5: Entropy Management (熵管理)
-
-### 問題診斷
-
-Ouroboros 只設計了「怎麼把知識寫進去」，幾乎沒設計「怎麼讓它不爛」。跑過幾個月會被自己的熗壓垮。
-
-### 解決方案：staleness_rules.yaml
-
-```yaml
-# ouroboros/references/staleness_rules.yaml
-staleness_rules:
-  entity:
-    warning_threshold_days: 14
-    archive_threshold_days: 30
-  
-  concept:
-    warning_threshold_days: 30
-    archive_threshold_days: 60
-  
-  pattern:
-    warning_threshold_days: 60
-    archive_threshold_days: 120
-```
-
-### 自動歸檔腳本
-
-```bash
-# 掃描並報告過時頁面（dry-run）
-python3 ouroboros/scripts/auto_archive_hook.py
-
-# 實際執行歸檔
-python3 ouroboros/scripts/auto_archive_hook.py --execute
-```
-
-### 去重偵測
-
-```bash
-# 偵測近義重複頁面
-python3 ouroboros/scripts/deduplication_hook.py
-```
-
----
-
-## Phase 2.5: Enforcement Hooks (強制力)
-
-### 問題診斷
-
- Ouroboros 全靠自然語言語氣（MUST/NEVER），沒有任何 hook、CI、schema validator 在程式層擋。
-
-### Wikilinks 完整性檢查
-
-```bash
-# 檢查所有 [[wikilinks]] 是否指向存在的頁面
-python3 ouroboros/scripts/wikilinks_integrity_hook.py
-```
-
-**會阻擋 merge 如果有斷鏈存在。**
-
-### 程式化 CI 鉤子
-
-建議的 Git hook 設定：
-
-```yaml
-# ouroboros_ci.yaml（建議的 CI 設定）
-hooks:
-  pre-commit:
-    - validate_frontmatter_schema
-    - check_wikilinks_integrity
-    - scan_staleness
-  
-  pre-merge:
-    - deduplication_check
-    - entity_concept_type_validation
-    - link_integrity_report
-```
-
-### Frontmatter Schema 驗證
-
-```json
-// ouroboros/references/frontmatter_schema.json
-{
-  "required": ["title", "type", "updated"],
-  "properties": {
-    "type": {"enum": ["entity", "concept", "pattern", "comparison", "procedure"]},
-    "status": {"enum": ["active", "superseded", "archived", "draft", "deprecated"]},
-    "updated": {"type": "string", "format": "date"}
-  }
-}
-```
-
----
-
-## Phase 6: Working Memory Integration (工作記憶)
-
-### 問題診斷
-
-Ouroboros 只做「codebase 知識庫」，缺少 agent 工作記憶層：
-- 沒有 progress 追蹤
-- 沒有操作踩坑記錄
-- 沒有 baseline/測試記錄
-- 沒有 shared/private 可見範圍分級
-
-### 解決方案：三層記憶架構
-
-```
-┌─────────────────────────────────────────────────┐
-│  Ouroboros Knowledge Base（長期知識）            │
-│  - wiki/ — PR-reviewed, curated                 │
-│  - 回答「為什麼這樣設計」                        │
-└─────────────────────────────────────────────────┘
-                      ↑
-┌─────────────────────────────────────────────────┐
-│  Session Memory（當前任務）                      │
-│  - memory/YYYY-MM-DD.md                         │
-│  - 回答「現在在處理什麼」                        │
-└─────────────────────────────────────────────────┘
-                      ↑
-┌─────────────────────────────────────────────────┐
-│  Working Memory（當下操作）                      │
-│  - HEARTBEAT.md, task_queue.json                │
-│  - 回答「我現在在做什麼」                        │
-└─────────────────────────────────────────────────┘
-```
-
-### Progress Tracker
-
-```bash
-# 開始 Phase
-python3 ouroboros/scripts/progress_tracker.py start "phase_1"
-
-# 完成 Phase
-python3 ouroboros/scripts/progress_tracker.py complete "phase_1"
-
-# 記錄決策
-python3 ouroboros/scripts/progress_tracker.py decision \
-  --decision "採用 iterative mode" \
-  --reason "中小型專案不需要嚴格順序"
-
-# 查看進度
-python3 ouroboros/scripts/progress_tracker.py status
-
-# 查看審計日誌
-python3 ouroboros/scripts/progress_tracker.py audit --limit 20
-```
-
-### Session Memory Hook
-
-```bash
-# 記錄 entry
-python3 ouroboros/scripts/session_memory_hook.py --entry "完成 Phase 1" --category "Ouroboros"
-
-# 記錄決策
-python3 ouroboros/scripts/session_memory_hook.py --decision "採用某方案" --reason "因為..."
+*本 skill 只裝「單一 repo → 四層知識庫」的萃取管線骨架。規模判準與工具決策見 references/01；證據攝入與 provenance 見 references/02；graphify 工具見 references/03；wiki 策展與否證關見 references/04；spec 契約與 visibility 見 references/05。上列姊妹能力一律指回、不在本包重複定義。*

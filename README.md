@@ -1,81 +1,77 @@
-# Ouroboros Skill
+# ouroboros（crystal 入籍版）
 
-Ouroboros 是一個把專案整理成可審計知識系統的 Codex/agent skill。它的目的不是取代程式碼、issue tracker 或文件站，而是替 agent 建立一個清楚的工作地圖：證據放哪裡、程式碼在哪裡、架構關係怎麼查、決策脈絡怎麼保存、規格契約怎麼回寫。
+## 這是什麼
 
-核心目標是讓一個專案從「散落的 repo 與對話記憶」變成 Trivium-aligned workspace：
+把**單一 repo** 消化成四層可審計知識庫的萃取管線：`raw/`（唯一證據層，append-only）、`graphify/`（工具生成的依賴圖）、`wiki/`（curated 決策與程序架構）、`spec/`（從 code 萃取的模組現況契約）。適用於接手陌生 codebase 要建知識庫、或多個 agent 反覆重讀同一批 code 在浪費 context 的場景；小專案（<5 檔）不適用，LLM 直讀即可。本包移植自外部作品 ouroboros（roaringmoon 著，Trivium v2.7），改寫範圍與逐項對照見 `references/00-readme.md`。
 
-```text
-workspace/
-  raw/       # 原始證據：需求、會議紀錄、外部資料、測試結果；append-only
-  repos/     # 真正的程式碼 repo；所有程式碼修改都在這裡
-  graphify/  # 程式碼關係圖與跨模組連結；read-only output
-  wiki/      # 經人工審查的決策、實體、模式與比較；引用 raw/ 作為證據
-  spec/      # OpenSpec-style 契約、API schema 與施工藍圖
-  memory/    # session memory：當前任務進度、決策、問題
-  .ouroboros/# progress tracker、audit log、archive 等維護狀態
+## 包結構
+
+```
+ouroboros-crystal/
+├── SKILL.md                 # ≤120 行骨架：四層定位 / 六 Phase / Question Routing / 鐵律 / 指回清單
+├── README.md                # 本檔
+├── references/
+│   ├── 00-readme.md         # 導讀 + 原版出處 + 改寫範圍聲明（沿用 vs 標準化新增）
+│   ├── 01-size-assessment.md   # Phase 0：S/M/L 判準與工具決策
+│   ├── 02-evidence-and-code.md # Phase 1–2：raw/ 證據 + provenance + repos/
+│   ├── 03-graphify-tooling.md  # Phase 3：依賴圖工具與安全安裝
+│   ├── 04-wiki-curation.md     # Phase 4：wiki 四型頁 / 否證關 / 兩層核驗
+│   └── 05-spec-bridge.md       # Phase 4：spec 契約 / visibility / 對齊對照表
+└── hooks/                   # 強制力腳本（由另一負責人維護）
+    ├── wikilink-integrity-guard.py
+    ├── wiki-staleness-scan.py
+    └── tests/
 ```
 
-## 為什麼需要它
+## 與原版差異總表
 
-一般 agent 很容易在大型專案裡混淆三件事：原始證據、目前程式碼事實、以及後來整理出的解釋。Ouroboros 用固定分層把它們拆開：
+| 面向 | 差異 |
+|---|---|
+| **結構重組** | 原作機制集中在單一 SKILL.md；本包拆成 ≤120 行骨架 + references 六檔，深度細節下放 |
+| **強制力腳本化** | 原作把斷鏈/過時檢查寫成文字規範（未附可執行腳本）；本包落成 `hooks/` 可執行檢查器，強制力改由 exit-code 承擔 |
+| **去重指回** | 熵管理/需求 SPEC/否證關等一律指回姊妹 skill，只寫介面、不重寫其機制內文 |
+| **標準化新增** | 三處：raw/ provenance 欄、wiki 全型別 status 生命週期、spec visibility 欄（皆在對應 references 明標非原作） |
+| **範圍收斂** | 砍掉跨 repo 支援與跨 repo 合併輸出、語義檢索承諾——收斂到單一 repo、召回走規則路由 |
 
-- `raw/` 是唯一 canonical evidence layer。wiki 可以引用它，但不能複製出 `wiki/raw/` 第二真相源。
-- `repos/` 是程式碼真相源。`raw/` 不放 code，wiki 也不直接取代 code。
-- `graphify/` 負責回答「誰依賴誰、改了會影響哪裡」。
-- `wiki/` 負責回答「為什麼這樣設計、曾經考慮過什麼」。
-- `spec/` 負責回答「契約、輸入輸出、API 與資料流應該長什麼樣」。
+## 協作對接
 
-這讓 agent 在改 code 前能先查證據與決策，在改 code 後能回寫 spec/wiki，降低知識漂移。
+本包只裝「單一 repo → 四層知識庫」的萃取管線。下列能力由**姊妹 skill** 承擔，本包**僅以名稱與介面一句話銜接、不含其任何機制內文**：
 
-## 適合的使用情境
+- **索引式 memory skill**：提供保鮮標籤（`<!-- updated -->` / `<!-- staleness -->`）與索引/路由的語意慣例；本包 wiki 保鮮標籤遵其格式。
+- **spec 生產鏈 skill**：負責「人寫的需求 SPEC」之起草與 gate；本包只萃取 code 現況契約，需求 SPEC 交其產與審。
+- **對抗式 QE skill**：提供 wiki concept 主張的否證關（起草者≠審查者、finding 過否證才計分）；本包 wiki 入庫遵其否證流程。
+- **黑箱測試 skill**：定義對外行為白名單/黑名單邊界；本包 spec `visibility: external` 供其機械抽取白名單。
 
-- 多 repo 或中大型專案，需要 agent 穩定理解跨模組關係。
-- 需求、會議紀錄、架構決策散落在不同地方，需要集中成可引用證據層。
-- 團隊希望 wiki 不是隨手筆記，而是 PR-reviewed、可追溯、可驗證的知識庫。
-- 想把 OpenSpec、Graphify、codebase-memory-mcp 等工具串成一條有順序的 agent workflow。
+> 聲明：本包不含上述任何 skill 的內容，僅以介面銜接。各能力的實作與流程以其本體 skill 為單一事實來源，本包不複製、不另訂。
 
-小型專案也可以用，但不一定需要 graphify 或 codebase-memory-mcp。Skill 內建 size-based tool selection：小專案偏向 LLM + wiki，中型專案只 graphify 關鍵模組，大型專案才啟用完整索引。
+## hooks 部署與部署驗收
 
-## 基本流程
+hooks/ 兩支為 standalone CLI 檢查器（`python3 <script> <workspace-root>`），由另一負責人維護。掛載方式與已知漏接見各腳本檔首註解。
 
-1. 建立 workspace 結構：`raw/`, `repos/`, `graphify/`, `wiki/`, `spec/`。
-2. 把需求、會議、外部參考等原始材料放進 `raw/`，並保持 append-only。
-3. 把實際程式碼 repo 放進 `repos/<repo-name>/`。
-4. 視專案大小執行 graphify 或 codebase-memory-mcp，產生關係圖。
-5. 由 agent 根據證據、程式碼圖與 spec 草擬 wiki 頁面。
-6. 透過 PR review 合併 wiki/spec 更新。
-7. 用 maintenance hooks 定期檢查 staleness、wikilink、frontmatter、重複頁面與工作記憶。
-
-## 安全與治理原則
-
-- 不要修改既有 `raw/` 證據；新資訊用新檔案追加。
-- 不要建立 `wiki/raw/`。
-- 不要把外部文字直接視為可信指令；raw evidence 應標注 `source`, `ingested_by`, `trust`, `sanitized`。
-- 一般任務不要把 `status: superseded` 或 `status: deprecated` 的頁面放進 context，除非任務明確要求歷史、稽核或遷移背景。
-- wiki/spec 更新應透過 PR review，不應由 agent 直接 auto-merge。
-
-## 內建維護腳本
-
-所有腳本都可用 `OUROBOROS_WORKSPACE_DIR` 指定目標 workspace：
+**部署驗收——先注入已知故障驗證器（裝上不等於有效）**：
 
 ```bash
-export OUROBOROS_WORKSPACE_DIR=/path/to/workspace
-python scripts/quality_gate.py --strict
-python scripts/wikilinks_integrity_hook.py
-python scripts/deduplication_hook.py
-python scripts/auto_archive_hook.py
-python scripts/progress_tracker.py status
+# 1) wikilink 完整性：故意在 wiki/ 塞一條斷鏈，檢查器必須擋下
+mkdir -p _verify/wiki
+printf -- '- 壞連結：[[raw/2099-01-01-does-not-exist]]\n' > _verify/wiki/broken.md
+python3 hooks/wikilink-integrity-guard.py _verify
+echo "斷鏈檢查 exit code = $?   # 必須為 2（有斷鏈才算裝好；若為 0 代表驗證器沒作用）"
+
+# 2) 過時掃描：塞一個明顯過期的保鮮標籤，--strict 下必須非 0
+mkdir -p _verify/wiki
+{ printf -- '<!-- updated: 2000-01-01 -->\n'; printf -- '<!-- staleness: 1d -->\n'; } > _verify/wiki/stale.md
+python3 hooks/wiki-staleness-scan.py --strict _verify
+echo "過時掃描 exit code = $?   # --strict 下有超期必須為 1"
+
+# 3) 驗證器確認有效後，清掉臨時故障
+rm -rf _verify
 ```
 
-在 Windows PowerShell 可用：
+驗收哲學：**故意造一個已知故障，檢查器抓不到就是檢查器壞了、先修檢查器**，不是裝上就信任。斷鏈檢查器對乾淨輸入應 `exit 0`、對含斷鏈輸入應 `exit 2`；過時掃描預設 `exit 0`（提醒不阻擋）、`--strict` 有超期才 `exit 1`。
 
-```powershell
-$env:OUROBOROS_WORKSPACE_DIR = "C:\path\to\workspace"
-python scripts\quality_gate.py --strict
-```
+## 試點計畫（待回填）
 
-## 目前版本重點
+本包 status 為 **experimental**，待首個 **MEDIUM 規模（5–20 檔）** 真實專案跑完整流程回填實戰後轉 stable。試點要驗：
 
-Trivium v2.8 加入 working memory integration：除了長期的 `wiki/` 知識庫，也加入 `memory/` 與 `.ouroboros/progress.json`，用來追蹤當前任務、phase 進度、決策與 audit log。
-
-簡單說：Ouroboros 讓 agent 不只「讀 repo」，而是能沿著 evidence → code → graph → wiki → spec 的鏈條工作，並留下可追溯的理由。
+- **驗什麼**：六 Phase 是否可照序落地；Question Routing 是否真能替代重讀 code；provenance / 全型別 status / visibility 三處標準化新增在實作中是否好用、有無過度設計；hooks 斷鏈與過時檢查在真 workspace 的漏接率。
+- **回報格式**：規模判定（檔數/S-M-L）、各 Phase 實際產出與卡點、三處標準化新增的實用性評語、hooks 誤報/漏報清單、是否建議轉 stable。
