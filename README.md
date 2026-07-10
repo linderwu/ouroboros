@@ -2,7 +2,7 @@
 
 ## 這是什麼
 
-把**單一 repo** 消化成四層可審計知識庫的萃取管線：`raw/`（唯一證據層，append-only）、`graphify/`（工具生成的依賴圖）、`wiki/`（curated 決策與程序架構）、`spec/`（從 code 萃取的模組現況契約）。適用於接手陌生 codebase 要建知識庫、或多個 agent 反覆重讀同一批 code 在浪費 context 的場景；小專案（<5 檔）不適用，LLM 直讀即可。本包移植自外部作品 ouroboros（roaringmoon 著，Trivium v2.7），改寫範圍與逐項對照見 `references/00-readme.md`。
+把**單一 repo** 消化成四層可審計知識庫的萃取管線：`raw/`（唯一證據層，append-only）、`graphify/`（工具生成的依賴圖）、`wiki/`（curated 決策與程序架構）、`spec/`（從 code 萃取的模組現況契約）。適用於接手陌生 codebase 要建知識庫、追問「為什麼這樣設計」、或多個 agent 反覆重讀同一批 code 在浪費 context 的場景；小專案（<5 檔）不適用，LLM 直讀即可。本包移植自外部作品 ouroboros（roaringmoon 著，Trivium v2.7），改寫範圍與逐項對照見 `references/00-readme.md`。
 
 ## 包結構
 
@@ -16,7 +16,8 @@ ouroboros-crystal/
 │   ├── 02-evidence-and-code.md # Phase 1–2：raw/ 證據 + provenance + repos/
 │   ├── 03-graphify-tooling.md  # Phase 3：依賴圖工具與安全安裝
 │   ├── 04-wiki-curation.md     # Phase 4：wiki 四型頁 / 否證關 / 兩層核驗
-│   └── 05-spec-bridge.md       # Phase 4：spec 契約 / visibility / 對齊對照表
+│   ├── 05-spec-bridge.md       # Phase 4：spec 契約 / visibility / 對齊對照表
+│   └── 06-design-rationale-inquiry.md # 「為什麼這樣設計」追問流程
 └── hooks/                   # 強制力腳本（由另一負責人維護）
     ├── wikilink-integrity-guard.py
     ├── wiki-staleness-scan.py
@@ -27,10 +28,10 @@ ouroboros-crystal/
 
 | 面向 | 差異 |
 |---|---|
-| **結構重組** | 原作機制集中在單一 SKILL.md；本包拆成 ≤120 行骨架 + references 六檔，深度細節下放 |
+| **結構重組** | 原作機制集中在單一 SKILL.md；本包拆成 ≤120 行骨架 + references 七檔，深度細節下放 |
 | **強制力腳本化** | 原作把斷鏈/過時檢查寫成文字規範（未附可執行腳本）；本包落成 `hooks/` 可執行檢查器，強制力改由 exit-code 承擔 |
 | **去重指回** | 熵管理/需求 SPEC/否證關等一律指回姊妹 skill，只寫介面、不重寫其機制內文 |
-| **標準化新增** | 三處：raw/ provenance 欄、wiki 全型別 status 生命週期、spec visibility 欄（皆在對應 references 明標非原作） |
+| **標準化新增** | 四處：raw/ provenance 欄、wiki 全型別 status 生命週期、spec visibility 欄、設計理由追問流程（皆在對應 references 明標非原作） |
 | **範圍收斂** | 砍掉跨 repo 支援與跨 repo 合併輸出、語義檢索承諾——收斂到單一 repo、召回走規則路由 |
 
 ## 協作對接

@@ -21,6 +21,13 @@ The decision in one sentence.
 ## Context
 What problem needed solving? What forces were at play?
 
+## Design Rationale
+- Goal:
+- Constraints:
+- Evidence:
+- Validation:
+- Invalidation Triggers:
+
 ## Decision
 What was chosen?
 

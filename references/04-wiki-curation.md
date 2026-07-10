@@ -17,6 +17,8 @@ wiki/ 四個子目錄，一頁一個單位：
 | pattern | `wiki/patterns/` | runtime 經驗/debug 線索 | incident、post-mortem、效能觀察後 |
 | comparison | `wiki/comparisons/` | A vs B 選項比較 | 需要在方案間取捨時 |
 
+問「為什麼這樣設計」時，先讀 `06-design-rationale-inquiry.md` 做追問，再決定落到 concept 或 comparison。不要只寫結論；要補目的、約束、替代方案、取捨、證據、驗證與失效條件。
+
 **共用 frontmatter**（**所有型別都含 status——此為標準化新增，見 §2**）：
 
 ```yaml
@@ -96,6 +98,7 @@ wiki 頁**入庫走 PR，NEVER auto-merge**；且起草者不得自審。concept
 
 - 每頁 frontmatter 四欄齊 + status + 保鮮標籤。
 - wikilink 全部指向存在目標（跑 hooks 斷鏈檢查通過）。
+- concept/comparison 回答「為什麼」時，已套 `06-design-rationale-inquiry.md` 的追問梯。
 - concept 主張過否證關（有獨立審查 session 的紀錄）。
 - 引用證據過來源性抽查（不是只驗存在）。
 - 入庫走 PR，無 auto-merge。
